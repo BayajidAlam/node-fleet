@@ -1,11 +1,13 @@
 # GitOps Integration - Implementation Summary
 
 ## Overview
+
 Successfully implemented FluxCD-based GitOps integration for the node-fleet autoscaler project. This enables automated, declarative infrastructure management with continuous reconciliation.
 
 ## What Was Built
 
 ### 1. Core Infrastructure
+
 - **21 new files** created across GitOps structure
 - **1,708 lines** of configuration and automation code
 - **4 shell scripts** for installation and management
@@ -71,12 +73,14 @@ gitops/
 ## Key Features
 
 ### 1. Automated Reconciliation
+
 - **Infrastructure**: Syncs every 10 minutes
-- **Applications**: Syncs every 5 minutes  
+- **Applications**: Syncs every 5 minutes
 - **GitRepository**: Polls every 1 minute
 - **Drift Detection**: Auto-corrects manual changes
 
 ### 2. Dependency Management
+
 ```
 Infrastructure (Prometheus, Grafana)
     ↓
@@ -86,12 +90,14 @@ Monitoring (alerts) - depends on infrastructure
 ```
 
 ### 3. Image Automation
+
 - Detects new container image versions
 - Updates deployment manifests automatically
 - Commits changes back to Git
 - Follows semantic versioning
 
 ### 4. Multi-Layer Deployment
+
 1. **Infrastructure Layer**: Core services (Prometheus, Grafana)
 2. **Application Layer**: Workloads (demo-app)
 3. **Monitoring Layer**: Alerts and dashboards
@@ -99,6 +105,7 @@ Monitoring (alerts) - depends on infrastructure
 ## Integration Points
 
 ### With Autoscaler
+
 ```
 FluxCD deploys → Prometheus → Lambda reads metrics → Scales nodes
                       ↓
@@ -108,6 +115,7 @@ FluxCD deploys → Prometheus → Lambda reads metrics → Scales nodes
 ```
 
 ### With CI/CD
+
 ```
 Developer → Git Push → FluxCD detects → Apply to cluster
                            ↓
@@ -119,21 +127,25 @@ Developer → Git Push → FluxCD detects → Apply to cluster
 ## Manifests Created
 
 ### Apps (4 files)
+
 1. **deployment.yaml**: Demo app with 2 replicas, resource limits, health checks
 2. **service.yaml**: NodePort service on port 30080
 3. **autoscaler.yaml**: HPA with CPU/memory targets, scale behavior
 4. **kustomization.yaml**: Groups app resources
 
 ### Infrastructure (3 files)
+
 1. **prometheus.yaml**: Full monitoring stack with RBAC, scrape configs
 2. **grafana.yaml**: Visualization with Prometheus datasource
 3. **kustomization.yaml**: Groups infrastructure
 
 ### Monitoring (2 files)
+
 1. **alerts.yaml**: 10 alert rules (CPU, memory, pods, queue, latency, errors)
 2. **kustomization.yaml**: Groups monitoring
 
 ### Cluster Config (5 files)
+
 1. **kustomization.yaml**: Root manifest
 2. **infrastructure.yaml**: Infrastructure Kustomization
 3. **apps.yaml**: Apps Kustomization with dependency
@@ -143,9 +155,11 @@ Developer → Git Push → FluxCD detects → Apply to cluster
 ## Scripts Created
 
 ### 1. install-flux.sh (127 lines)
+
 **Purpose**: Bootstrap FluxCD in K3s cluster
 
 **Features**:
+
 - Prerequisite checks (kubectl, cluster access, GitHub token)
 - Flux CLI installation
 - Pre-flight validation
@@ -154,6 +168,7 @@ Developer → Git Push → FluxCD detects → Apply to cluster
 - Source controller configuration
 
 **Usage**:
+
 ```bash
 export GITHUB_TOKEN=<token>
 export GITHUB_USER=<username>
@@ -161,9 +176,11 @@ export GITHUB_USER=<username>
 ```
 
 ### 2. check-status.sh (45 lines)
+
 **Purpose**: Verify FluxCD deployment status
 
 **Checks**:
+
 - Flux system health
 - All resources status
 - Kustomizations state
@@ -171,33 +188,40 @@ export GITHUB_USER=<username>
 - Recent events
 
 **Usage**:
+
 ```bash
 ./check-status.sh
 ```
 
 ### 3. reconcile.sh (32 lines)
+
 **Purpose**: Force immediate reconciliation
 
 **Actions**:
+
 - Reconcile Git repository
 - Reconcile infrastructure
 - Reconcile apps
 - Reconcile monitoring
 
 **Usage**:
+
 ```bash
 ./reconcile.sh
 ```
 
 ### 4. uninstall-flux.sh (28 lines)
+
 **Purpose**: Clean removal of FluxCD
 
 **Actions**:
+
 - Suspend all resources
 - Uninstall controllers
 - Preserve Git manifests
 
 **Usage**:
+
 ```bash
 ./uninstall-flux.sh
 ```
@@ -209,39 +233,46 @@ export GITHUB_USER=<username>
 **Test Classes** (8 classes, 35+ tests):
 
 1. **TestFluxInstallation**
+
    - CLI installed
    - Namespace exists
    - Controllers running
 
 2. **TestGitRepository**
+
    - Resource exists
    - Ready status
    - Sync working
 
 3. **TestKustomizations**
+
    - Infrastructure exists
    - Apps exists
    - Monitoring exists
    - All ready
 
 4. **TestReconciliation**
+
    - Manual trigger works
    - Interval respected
    - Changes synced
 
 5. **TestDemoAppDeployment**
+
    - Deployment exists
    - Service accessible
    - HPA configured
    - Pods running
 
 6. **TestMonitoringStack**
+
    - Namespace created
    - Prometheus running
    - Grafana running
    - Services accessible
 
 7. **TestDriftDetection**
+
    - Manual changes reverted
    - Desired state enforced
 
@@ -250,6 +281,7 @@ export GITHUB_USER=<username>
    - All components integrated
 
 **Run Tests**:
+
 ```bash
 cd tests/gitops
 pytest test_flux_integration.py -v
@@ -258,7 +290,9 @@ pytest test_flux_integration.py -v
 ## Documentation
 
 ### 1. GITOPS_INTEGRATION.md (450 lines)
+
 Comprehensive guide covering:
+
 - Architecture and workflow
 - Installation steps
 - Usage examples
@@ -269,7 +303,9 @@ Comprehensive guide covering:
 - Next steps and extensions
 
 ### 2. README.md (80 lines)
+
 Quick reference for:
+
 - Common operations
 - Troubleshooting commands
 - GitOps workflow
@@ -293,12 +329,14 @@ Quick reference for:
 ## Security Considerations
 
 ### RBAC
+
 - FluxCD runs with minimal permissions
 - ServiceAccount: `flux-system/source-controller`
 - ClusterRole: Limited to Flux resources only
 - No cluster-admin privileges
 
 ### Secrets Management
+
 - GitHub token stored in `flux-system` namespace
 - Encrypted at rest
 - Not exposed in manifests
@@ -307,24 +345,28 @@ Quick reference for:
 ## Benefits Achieved
 
 ### 1. Automation
+
 ✅ No manual kubectl apply commands  
 ✅ Git as single source of truth  
 ✅ Automatic drift correction  
 ✅ Continuous reconciliation
 
 ### 2. Reliability
+
 ✅ Declarative deployments  
 ✅ Version-controlled infrastructure  
 ✅ Rollback via Git revert  
 ✅ Dependency management
 
 ### 3. Observability
+
 ✅ Event logging  
 ✅ Reconciliation metrics  
 ✅ Status reporting  
 ✅ Audit trail in Git
 
 ### 4. Developer Experience
+
 ✅ GitOps workflow familiar to developers  
 ✅ Pull request reviews for infrastructure  
 ✅ Automated testing before merge  
@@ -333,11 +375,13 @@ Quick reference for:
 ## Performance Impact
 
 ### Resource Overhead
+
 - **CPU**: ~300m (100m per controller × 3)
 - **Memory**: ~256Mi (64Mi per controller × 4)
 - **Storage**: Minimal (Git clone + manifests)
 
 ### Reconciliation Latency
+
 - **Git poll**: 1 minute
 - **Kustomization sync**: 1-10 minutes (configurable)
 - **Full deployment**: ~2-5 minutes from Git push
@@ -345,21 +389,25 @@ Quick reference for:
 ## Integration with Existing Features
 
 ### 1. Multi-AZ Distribution
+
 - FluxCD deploys to all availability zones
 - Workers distributed across ap-southeast-1a,b
 - Monitoring stack in primary AZ
 
 ### 2. Spot Instances
+
 - GitOps manages both spot and on-demand nodes
 - 70/30 ratio maintained
 - Interruption handling preserved
 
 ### 3. Predictive Scaling
+
 - DynamoDB metrics history accessible
 - Prometheus scrapes predictions
 - Lambda makes scaling decisions
 
 ### 4. Custom Metrics
+
 - Demo app exposes custom metrics
 - Prometheus scrapes automatically
 - Lambda uses for scaling decisions
@@ -367,7 +415,9 @@ Quick reference for:
 ## Next Steps (Future Enhancements)
 
 ### 1. Slack Notifications
+
 Add FluxCD Alert Provider:
+
 ```yaml
 apiVersion: notification.toolkit.fluxcd.io/v1beta1
 kind: Provider
@@ -379,19 +429,25 @@ spec:
 ```
 
 ### 2. Canary Deployments
+
 Integrate Flagger:
+
 - Progressive delivery
 - Automated rollback on metric regression
 - A/B testing capabilities
 
 ### 3. Sealed Secrets
+
 Encrypt secrets in Git:
+
 - Install Sealed Secrets controller
 - Convert secrets to SealedSecret
 - Commit encrypted values
 
 ### 4. Multi-Cluster
+
 Deploy to staging + production:
+
 - Separate cluster configs
 - Promotion workflow
 - Environment-specific overrides
@@ -412,6 +468,7 @@ Deploy to staging + production:
 ✅ All files committed to Git
 
 ## Commit Summary
+
 - **Commit Hash**: 6c8cb7b
 - **Files Changed**: 21
 - **Insertions**: 1,708
