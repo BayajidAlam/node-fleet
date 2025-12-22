@@ -1,9 +1,22 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/instrumenta/kubernetes-json-schema/master/v1.18.0-standalone-strict/all.json
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: monitoring
+---
+# Basic Auth Secret for Prometheus
+# Username: admin
+# Password: prompassword
+# Generated with: htpasswd -nBC 12 "" | tr -d ':\n'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prometheus-basic-auth
+  namespace: monitoring
+type: Opaque
+stringData:
+  auth: |
+    admin:$2y$12$hNf2lSsxfm0.i4a.1kVpSOVyBCfIB51VRjgBUyv6kdnyTlgWj81Ay
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -54,6 +67,9 @@ data:
       - job_name: 'demo-app'
         static_configs:
           - targets: ['demo-app.default.svc.cluster.local:5000']
+  web.yml: |
+    basic_auth_users:
+      admin: $2y$12$hNf2lSsxfm0.i4a.1kVpSOVyBCfIB51VRjgBUyv6kdnyTlgWj81Ay
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -76,6 +92,7 @@ spec:
           image: prom/prometheus:v2.48.0
           args:
             - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--web.config.file=/etc/prometheus/web.yml"
             - "--storage.tsdb.path=/prometheus"
             - "--storage.tsdb.retention.time=30d"
             - "--web.enable-lifecycle"

@@ -23,7 +23,7 @@ class StateManager:
     
     def acquire_lock(self, timeout: int = 5) -> bool:
         """
-        Acquire distributed lock using DynamoDB conditional writes
+        Acquire distributed lock using DynamoDB conditional writes with expiry
         
         Args:
             timeout: Maximum seconds to wait for lock
@@ -32,24 +32,46 @@ class StateManager:
             True if lock acquired, False otherwise
         """
         try:
+            current_time = int(time.time())
+            lock_expiry_time = current_time + 300  # Lock expires after 5 minutes
+            expired_time = current_time  # Locks older than now are considered expired
+            
             # Try to acquire lock with conditional expression
+            # Lock can be acquired if:
+            # 1. No lock exists (attribute_not_exists)
+            # 2. Lock is released (scaling_in_progress = false)
+            # 3. Lock has expired (lock_acquired_at < current_time - 300 seconds)
             self.table.update_item(
                 Key={'cluster_id': self.cluster_id},
-                UpdateExpression='SET scaling_in_progress = :true, lock_acquired_at = :now',
-                ConditionExpression='attribute_not_exists(scaling_in_progress) OR scaling_in_progress = :false',
+                UpdateExpression='SET scaling_in_progress = :true, lock_acquired_at = :now, lock_expiry = :expiry',
+                ConditionExpression='attribute_not_exists(scaling_in_progress) OR scaling_in_progress = :false OR lock_acquired_at < :expired',
                 ExpressionAttributeValues={
                     ':true': True,
                     ':false': False,
-                    ':now': int(time.time())
+                    ':now': current_time,
+                    ':expiry': lock_expiry_time,
+                    ':expired': current_time - 300  # Locks older than 5 minutes
                 }
             )
-            logger.info(f"Lock acquired for cluster {self.cluster_id}")
+            logger.info(f"Lock acquired for cluster {self.cluster_id} (expires at {lock_expiry_time})")
             return True
             
         except ClientError as e:
             if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                logger.warning(f"Lock already held for cluster {self.cluster_id}")
-                return False
+                # Check if lock is expired and force release
+                try:
+                    state = self.get_state()
+                    lock_age = current_time - state.get('lock_acquired_at', current_time)
+                    if lock_age > 300:
+                        logger.warning(f"Stale lock detected (age: {lock_age}s), forcing release")
+                        self.release_lock()
+                        return self.acquire_lock(timeout)  # Retry once
+                    else:
+                        logger.warning(f"Lock already held for cluster {self.cluster_id} (age: {lock_age}s)")
+                        return False
+                except:
+                    logger.warning(f"Lock already held for cluster {self.cluster_id}")
+                    return False
             else:
                 logger.error(f"Error acquiring lock: {str(e)}")
                 raise

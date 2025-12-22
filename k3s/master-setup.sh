@@ -32,8 +32,36 @@ aws secretsmanager update-secret \
   --secret-string "$K3S_TOKEN" \
   --region ap-south-1
 
+# Setup Prometheus basic auth
+echo "🔒 Setting up Prometheus basic authentication..."
+PROM_CREDS=$(aws secretsmanager get-secret-value \
+  --secret-id node-fleet/prometheus-auth \
+  --region ap-south-1 \
+  --query SecretString --output text)
+
+PROM_USER=$(echo $PROM_CREDS | jq -r '.username')
+PROM_PASS=$(echo $PROM_CREDS | jq -r '.password')
+
+# Generate bcrypt hash for password (using htpasswd)
+sudo apt-get install -y apache2-utils
+PROM_HASH=$(htpasswd -nbBC 10 "$PROM_USER" "$PROM_PASS" | cut -d: -f2)
+
+# Create Prometheus web config with basic auth
+cat > /tmp/prom-web.yml <<WEBEOF
+basic_auth_users:
+  ${PROM_USER}: ${PROM_HASH}
+WEBEOF
+
 # Install Prometheus
 echo "📊 Installing Prometheus..."
+
+# Create Prometheus basic auth secret first
+sudo k3s kubectl create namespace monitoring --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+sudo k3s kubectl create secret generic prometheus-auth \
+  --from-file=web.yml=/tmp/prom-web.yml \
+  --namespace monitoring \
+  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+
 cat <<EOF | sudo k3s kubectl apply -f -
 apiVersion: v1
 kind: Namespace
@@ -100,17 +128,23 @@ spec:
           - '--config.file=/etc/prometheus/prometheus.yml'
           - '--storage.tsdb.path=/prometheus'
           - '--storage.tsdb.retention.time=7d'
+          - '--web.config.file=/etc/prometheus-auth/web.yml'
         ports:
         - containerPort: 9090
         volumeMounts:
         - name: prometheus-config
           mountPath: /etc/prometheus
+        - name: prometheus-auth
+          mountPath: /etc/prometheus-auth
         - name: prometheus-storage
           mountPath: /prometheus
       volumes:
       - name: prometheus-config
         configMap:
           name: prometheus-config
+      - name: prometheus-auth
+        secret:
+          secretName: prometheus-auth
       - name: prometheus-storage
         emptyDir: {}
 ---

@@ -40,3 +40,26 @@ export const slackSecretVersion = new aws.secretsmanager.SecretVersion(
     secretString: slackWebhookUrl,
   }
 );
+
+// Prometheus basic auth credentials
+const prometheusPassword = new random.RandomPassword("prometheus-password", {
+  length: 32,
+  special: true,
+});
+
+export const prometheusAuthSecret = new aws.secretsmanager.Secret(
+  "prometheus-auth",
+  {
+    name: "node-fleet/prometheus-auth",
+    description: "Prometheus basic authentication credentials",
+    recoveryWindowInDays: 0,
+  }
+);
+
+export const prometheusAuthSecretVersion = new aws.secretsmanager.SecretVersion(
+  "prometheus-auth-version",
+  {
+    secretId: prometheusAuthSecret.id,
+    secretString: pulumi.interpolate`{"username":"prometheus-admin","password":"${prometheusPassword.result}"}`,
+  }
+);

@@ -14,14 +14,23 @@ logger.setLevel(logging.INFO)
 class CustomMetricsCollector:
     """Collects and evaluates custom application metrics for scaling decisions"""
     
-    def __init__(self, prometheus_url: str):
+    def __init__(self, prometheus_url: str, username: str = None, password: str = None):
         """
         Initialize custom metrics collector
         
         Args:
             prometheus_url: Prometheus server URL
+            username: Basic auth username (optional)
+            password: Basic auth password (optional)
         """
-        self.prom = PrometheusConnect(url=prometheus_url, disable_ssl=True)
+        headers = {}
+        if username and password:
+            import base64
+            credentials = f"{username}:{password}"
+            encoded = base64.b64encode(credentials.encode()).decode()
+            headers = {"Authorization": f"Basic {encoded}"}
+        
+        self.prom = PrometheusConnect(url=prometheus_url, headers=headers, disable_ssl=True)
     
     def get_queue_depth(self, queue_name: str = "default") -> Optional[int]:
         """
@@ -252,18 +261,20 @@ class CustomMetricsCollector:
         return result
 
 
-def get_custom_metrics(prometheus_url: str, thresholds: Dict = None) -> Dict:
+def get_custom_metrics(prometheus_url: str, username: str = None, password: str = None, thresholds: Dict = None) -> Dict:
     """
     Convenience function to collect all custom metrics
     
     Args:
         prometheus_url: Prometheus server URL
+        username: Basic auth username (optional)
+        password: Basic auth password (optional)
         thresholds: Optional thresholds for evaluation
     
     Returns:
         Dict with custom metrics and scaling recommendation
     """
-    collector = CustomMetricsCollector(prometheus_url)
+    collector = CustomMetricsCollector(prometheus_url, username, password)
     
     default_thresholds = {
         'queue_depth_max': 100,

@@ -20,6 +20,7 @@ from slack_notifier import send_notification
 from scaling_decision import ScalingDecision
 from predictive_scaling import PredictiveScaler
 from custom_metrics import get_custom_metrics
+from cost_optimizer import get_cost_recommendations
 
 # Configure logging
 logger = logging.getLogger()
@@ -31,6 +32,8 @@ cloudwatch = boto3.client('cloudwatch')
 # Environment variables
 CLUSTER_ID = os.environ.get("CLUSTER_ID", "node-fleet-cluster")
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL")
+PROMETHEUS_USERNAME = os.environ.get("PROMETHEUS_USERNAME", "admin")
+PROMETHEUS_PASSWORD = os.environ.get("PROMETHEUS_PASSWORD", "prompassword")
 STATE_TABLE = os.environ.get("STATE_TABLE")
 METRICS_HISTORY_TABLE = os.environ.get("METRICS_HISTORY_TABLE")
 MIN_NODES = int(os.environ.get("MIN_NODES", "2"))
@@ -50,7 +53,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     try:
         # Step 1: Collect Prometheus metrics
         logger.info("Step 1: Collecting metrics from Prometheus")
-        metrics = collect_metrics(PROMETHEUS_URL)
+        metrics = collect_metrics(PROMETHEUS_URL, PROMETHEUS_USERNAME, PROMETHEUS_PASSWORD)
         logger.info(f"Metrics collected: {metrics}")
         
         # Step 2: Acquire DynamoDB lock
@@ -95,7 +98,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if ENABLE_CUSTOM_METRICS and PROMETHEUS_URL:
                 logger.info("Collecting custom application metrics")
                 try:
-                    custom_metrics_eval = get_custom_metrics(PROMETHEUS_URL)
+                    custom_metrics_eval = get_custom_metrics(
+                        PROMETHEUS_URL, 
+                        PROMETHEUS_USERNAME, 
+                        PROMETHEUS_PASSWORD
+                    )
                     logger.info(f"Custom metrics: {custom_metrics_eval}")
                 except Exception as e:
                     logger.warning(f"Failed to collect custom metrics: {e}")
@@ -182,6 +189,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info("Step 5: Sending Slack notification")
             notification_message = format_notification(action, result, new_node_count, metrics)
             send_notification(notification_message)
+            
+            # BONUS: Generate cost optimization recommendations (weekly)
+            if should_generate_cost_report():
+                logger.info("Generating weekly cost optimization report")
+                try:
+                    cost_recommendations = get_cost_recommendations(
+                        cluster_id=CLUSTER_ID,
+                        current_metrics=metrics,
+                        current_nodes=new_node_count
+                    )
+                    
+                    if cost_recommendations.get('recommendations'):
+                        send_cost_recommendations_notification(cost_recommendations)
+                        logger.info(f"Cost recommendations sent: {len(cost_recommendations['recommendations'])} suggestions")
+                except Exception as e:
+                    logger.error(f"Failed to generate cost recommendations: {e}")
             
             return {
                 "statusCode": 200,
@@ -332,3 +355,46 @@ def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, 
     
     except Exception as e:
         logger.warning(f"Failed to publish CloudWatch metrics: {e}")
+
+
+def should_generate_cost_report() -> bool:
+    """
+    Determine if cost optimization report should be generated
+    Run once per week on Sundays at noon
+    """
+    from datetime import datetime
+    now = datetime.utcnow()
+    
+    # Only on Sundays (weekday 6) between 12:00-12:10 UTC
+    return now.weekday() == 6 and now.hour == 12 and now.minute < 10
+
+
+def send_cost_recommendations_notification(recommendations: Dict) -> None:
+    """
+    Send cost optimization recommendations to Slack
+    
+    Args:
+        recommendations: Cost recommendations from cost_optimizer
+    """
+    total_savings = recommendations.get('potential_savings_percent', 0)
+    rec_list = recommendations.get('recommendations', [])
+    
+    if not rec_list:
+        return
+    
+    # Build Slack message
+    message = f"💰 **Weekly Cost Optimization Report** ({recommendations['timestamp'][:10]})\n\n"
+    message += f"**Potential Savings: {total_savings:.1f}%**\n\n"
+    message += f"Found {len(rec_list)} optimization opportunities:\n\n"
+    
+    for i, rec in enumerate(rec_list, 1):
+        severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(rec['severity'], "⚪")
+        message += f"{severity_emoji} **{i}. {rec['type'].replace('_', ' ').title()}**\n"
+        message += f"   • {rec['message']}\n"
+        message += f"   • Action: {rec['action']}\n"
+        message += f"   • Savings: {rec['savings_percent']:.1f}%\n"
+        message += f"   • Impact: {rec['impact']}\n\n"
+    
+    message += "_Recommendations are suggestions - evaluate before implementing._"
+    
+    send_notification(message)
