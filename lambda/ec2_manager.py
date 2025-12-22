@@ -1,6 +1,6 @@
 """
 EC2 manager for scaling worker nodes
-Handles instance launch and termination with Multi-AZ support
+Handles instance launch and termination with Multi-AZ support and spot instances
 """
 
 import logging
@@ -9,6 +9,12 @@ import subprocess
 from typing import Dict, List
 from botocore.exceptions import ClientError
 from multi_az_helper import select_subnet_for_new_instance, get_az_distribution
+from spot_instance_helper import (
+    calculate_spot_ondemand_mix,
+    get_spot_interruption_notices,
+    handle_spot_interruption,
+    should_use_spot_instance
+)
 
 logger = logging.getLogger()
 
@@ -37,9 +43,29 @@ class EC2Manager:
         """
         logger.info(f"Scaling up: Adding {nodes_to_add} nodes. Reason: {reason}")
         
-        # Calculate spot vs on-demand split (70% spot, 30% on-demand)
-        spot_count = int(nodes_to_add * (self.spot_percentage / 100))
-        ondemand_count = nodes_to_add - spot_count
+        # Check for spot interruptions first
+        interrupted_instances = get_spot_interruption_notices(self._get_cluster_id())
+        if interrupted_instances:
+            logger.warning(f"Handling {len(interrupted_instances)} spot interruptions")
+            for instance_id in interrupted_instances:
+                handle_spot_interruption(instance_id, self._get_cluster_id())
+        
+        # Get current instance counts
+        worker_instances = self._get_worker_instances()
+        current_spot_count = sum(1 for inst in worker_instances if inst.get('InstanceLifecycle') == 'spot')
+        current_ondemand_count = len(worker_instances) - current_spot_count
+        current_total = len(worker_instances)
+        
+        # Calculate smart spot/on-demand mix to maintain 70/30 ratio
+        mix = calculate_spot_ondemand_mix(
+            current_nodes=current_total,
+            desired_nodes=current_total + nodes_to_add,
+            existing_spot_count=current_spot_count,
+            existing_ondemand_count=current_ondemand_count
+        )
+        
+        spot_count = mix['spot']
+        ondemand_count = mix['ondemand']
         
         instance_ids = []
         
@@ -65,6 +91,7 @@ class EC2Manager:
                 instance_ids.extend(ondemand_instances)
             
             logger.info(f"Successfully launched {len(instance_ids)} instances: {instance_ids}")
+            logger.info(f"New cluster composition: {current_spot_count + spot_count} spot + {current_ondemand_count + ondemand_count} on-demand")
             
             return {
                 "success": True,
@@ -134,7 +161,9 @@ class EC2Manager:
             
         except Exception as e:
             logger.error(f"Failed to scale down: {str(e)}")
-         get_cluster_subnets(self) -> List[str]:
+            raise
+    
+    def _get_cluster_subnets(self) -> List[str]:
         """Get public subnet IDs for the cluster (Multi-AZ)"""
         try:
             response = self.ec2_client.describe_subnets(
@@ -168,20 +197,23 @@ class EC2Manager:
                     MinCount=1,
                     MaxCount=1,
                     SubnetId=subnet_id  # Multi-AZ: Distribute across subnets
-                    MinCount=count,
-                MaxCount=count
-            )
+                )
+                
+                launched_ids = [inst['InstanceId'] for inst in response['Instances']]
+                instance_ids.extend(launched_ids)
+                
+                # Update existing instances list for next iteration
+                existing_instances.extend(response['Instances'])
             
-            instance_ids = [inst['InstanceId'] for inst in response['Instances']]
-            
-            # Tag instances
-            self.ec2_client.create_tags(
-                Resources=instance_ids,
-                Tags=[
-                    {'Key': 'InstanceType', 'Value': instance_type},
-                    {'Key': 'LaunchedBy', 'Value': 'autoscaler'}
-                ]
-            )
+            # Tag all launched instances
+            if instance_ids:
+                self.ec2_client.create_tags(
+                    Resources=instance_ids,
+                    Tags=[
+                        {'Key': 'InstanceType', 'Value': instance_type},
+                        {'Key': 'LaunchedBy', 'Value': 'autoscaler'}
+                    ]
+                )
             
             return instance_ids
             
@@ -237,6 +269,11 @@ class EC2Manager:
                 return private_dns.split('.')[0] if private_dns else instance_id
         except:
             return None
+    
+    def _get_cluster_id(self) -> str:
+        """Get cluster ID from environment or tags"""
+        import os
+        return os.environ.get('CLUSTER_ID', 'node-fleet-cluster')
     
     def _drain_node(self, node_name: str, timeout: int = 300) -> bool:
         """
