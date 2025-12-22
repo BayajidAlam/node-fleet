@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Initializing SmartScale K3s Autoscaler Project..."
+echo "🚀 Initializing NodeFleet K3s Autoscaler Project..."
 echo "=================================================="
 
 # Colors for output
@@ -37,9 +37,9 @@ cd pulumi
 # Create package.json
 cat > package.json <<'EOF'
 {
-  "name": "smartscale-infrastructure",
+  "name": "node-fleet-infrastructure",
   "version": "1.0.0",
-  "description": "SmartScale K3s Autoscaler Infrastructure",
+  "description": "NodeFleet K3s Autoscaler Infrastructure",
   "main": "index.ts",
   "scripts": {
     "build": "tsc",
@@ -80,9 +80,9 @@ EOF
 
 # Create Pulumi.yaml
 cat > Pulumi.yaml <<'EOF'
-name: smartscale
+name: node-fleet
 runtime: nodejs
-description: SmartScale K3s Autoscaler Infrastructure as Code
+description: NodeFleet K3s Autoscaler Infrastructure as Code
 EOF
 
 # Install Pulumi dependencies
@@ -92,14 +92,14 @@ npm install --silent
 # Initialize Pulumi stack
 echo -e "${BLUE}🔧 Initializing Pulumi stack...${NC}"
 pulumi login --local 2>/dev/null || pulumi login
-pulumi stack init smartscale-dev --non-interactive 2>/dev/null || pulumi stack select smartscale-dev
+pulumi stack init node-fleet-dev --non-interactive 2>/dev/null || pulumi stack select node-fleet-dev
 
 # Configure Pulumi
 echo -e "${BLUE}⚙️  Configuring Pulumi stack...${NC}"
 pulumi config set aws:region ap-south-1
-pulumi config set smartscale:clusterName "smartscale-prod"
-pulumi config set smartscale:minNodes 2
-pulumi config set smartscale:maxNodes 10
+pulumi config set node-fleet:clusterName "node-fleet-prod"
+pulumi config set node-fleet:minNodes 2
+pulumi config set node-fleet:maxNodes 10
 
 # Get Slack webhook URL from user
 echo ""
@@ -110,11 +110,11 @@ echo ""
 read -p "Enter Slack webhook URL (or press Enter to skip): " SLACK_WEBHOOK
 
 if [ -n "$SLACK_WEBHOOK" ]; then
-    pulumi config set --secret smartscale:slackWebhookUrl "$SLACK_WEBHOOK"
+    pulumi config set --secret node-fleet:slackWebhookUrl "$SLACK_WEBHOOK"
     echo -e "${GREEN}✅ Slack webhook configured${NC}"
 else
     # Use dummy webhook for now
-    pulumi config set --secret smartscale:slackWebhookUrl "https://hooks.slack.com/services/DUMMY/WEBHOOK/URL"
+    pulumi config set --secret node-fleet:slackWebhookUrl "https://hooks.slack.com/services/DUMMY/WEBHOOK/URL"
     echo -e "${YELLOW}⚠️  Skipped Slack webhook (you can configure later)${NC}"
 fi
 
@@ -189,7 +189,7 @@ Thumbs.db
 *.key
 *-key.pem
 k3s-kubeconfig.yaml
-smartscale-key.pem
+node-fleet-key.pem
 
 # Logs
 *.log
@@ -208,7 +208,7 @@ EOF
 # Create README
 echo -e "${BLUE}📄 Creating README...${NC}"
 cat > README.md <<'EOF'
-# SmartScale K3s Autoscaler
+# NodeFleet K3s Autoscaler
 
 Intelligent, cost-optimized Kubernetes autoscaler for AWS with Spot instances, Multi-AZ support, and predictive scaling.
 
@@ -235,7 +235,7 @@ Intelligent, cost-optimized Kubernetes autoscaler for AWS with Spot instances, M
 | Setup | Monthly Cost | Savings |
 |-------|--------------|---------|
 | Without autoscaler | $180 | 0% |
-| **With SmartScale** | **$70-83** | **54-58%** 🎯 |
+| **With NodeFleet** | **$70-83** | **54-58%** 🎯 |
 
 ## Quick Start
 
@@ -245,8 +245,8 @@ chmod +x scripts/init-project.sh
 ./scripts/init-project.sh
 
 # 2. Deploy everything (fully automated)
-chmod +x scripts/deploy-smartscale.sh
-./scripts/deploy-smartscale.sh
+chmod +x scripts/deploy-node-fleet.sh
+./scripts/deploy-node-fleet.sh
 ```
 
 ## Documentation
@@ -271,7 +271,7 @@ EOF
 # Summary
 echo ""
 echo -e "${GREEN}=================================================="
-echo -e "✅ SmartScale Project Initialized Successfully!"
+echo -e "✅ NodeFleet Project Initialized Successfully!"
 echo -e "==================================================${NC}"
 echo ""
 echo -e "${BLUE}📊 Project Statistics:${NC}"

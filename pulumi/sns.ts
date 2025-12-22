@@ -2,12 +2,12 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { lambdaRole } from "./iam";
 
-const config = new pulumi.Config("smartscale");
+const config = new pulumi.Config("node-fleet");
 const clusterName = config.require("clusterName");
 
-export const slackTopic = new aws.sns.Topic("smartscale-notifications", {
-    name: `${clusterName}-notifications`,
-    displayName: "SmartScale Autoscaler Notifications"
+export const slackTopic = new aws.sns.Topic("node-fleet-notifications", {
+  name: `${clusterName}-notifications`,
+  displayName: "NodeFleet Autoscaler Notifications",
 });
 
 // Lambda function to forward SNS to Slack webhook (no manual HTTPS subscription)
@@ -19,7 +19,7 @@ import os
 def handler(event, context):
     # Get webhook URL from Secrets Manager
     secrets = boto3.client('secretsmanager')
-    webhook_url = secrets.get_secret_value(SecretId='smartscale/slack-webhook')['SecretString']
+    webhook_url = secrets.get_secret_value(SecretId='node-fleet/slack-webhook')['SecretString']
     
     # Extract SNS message
     message = event['Records'][0]['Sns']['Message']
@@ -38,27 +38,27 @@ def handler(event, context):
 `;
 
 export const slackNotifierLambda = new aws.lambda.Function("slack-notifier", {
-    runtime: "python3.11",
-    handler: "index.handler",
-    role: lambdaRole.arn,
-    code: new pulumi.asset.AssetArchive({
-        "index.py": new pulumi.asset.StringAsset(slackNotifierCode)
-    }),
-    timeout: 30,
-    memorySize: 128
+  runtime: "python3.11",
+  handler: "index.handler",
+  role: lambdaRole.arn,
+  code: new pulumi.asset.AssetArchive({
+    "index.py": new pulumi.asset.StringAsset(slackNotifierCode),
+  }),
+  timeout: 30,
+  memorySize: 128,
 });
 
 // SNS subscribes to Lambda (not webhook directly - more reliable)
 export const slackSubscription = new aws.sns.TopicSubscription("slack-sub", {
-    topic: slackTopic.arn,
-    protocol: "lambda",
-    endpoint: slackNotifierLambda.arn
+  topic: slackTopic.arn,
+  protocol: "lambda",
+  endpoint: slackNotifierLambda.arn,
 });
 
 // Allow SNS to invoke Lambda
 export const allowSns = new aws.lambda.Permission("allow-sns", {
-    action: "lambda:InvokeFunction",
-    function: slackNotifierLambda.name,
-    principal: "sns.amazonaws.com",
-    sourceArn: slackTopic.arn
+  action: "lambda:InvokeFunction",
+  function: slackNotifierLambda.name,
+  principal: "sns.amazonaws.com",
+  sourceArn: slackTopic.arn,
 });

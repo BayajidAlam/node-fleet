@@ -2,9 +2,21 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 
 // Import all infrastructure modules
-import { vpc, publicSubnet1, publicSubnet2, privateSubnet1, privateSubnet2 } from "./vpc";
+import {
+  vpc,
+  publicSubnet1,
+  publicSubnet2,
+  privateSubnet1,
+  privateSubnet2,
+} from "./vpc";
 import { masterSg, workerSg, lambdaSg } from "./security-groups";
-import { masterRole, workerRole, lambdaRole, masterInstanceProfile, workerInstanceProfile } from "./iam";
+import {
+  masterRole,
+  workerRole,
+  lambdaRole,
+  masterInstanceProfile,
+  workerInstanceProfile,
+} from "./iam";
 import { stateTable, metricsHistoryTable } from "./dynamodb";
 import { k3sSecret, slackSecret } from "./secrets";
 import { slackTopic, slackNotifierLambda } from "./sns";

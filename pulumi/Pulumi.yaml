@@ -1,3 +1,3 @@
-name: smartscale
+name: node-fleet
 runtime: nodejs
-description: SmartScale K3s Autoscaler Infrastructure as Code
+description: NodeFleet K3s Autoscaler Infrastructure as Code
