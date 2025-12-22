@@ -353,6 +353,18 @@ avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100
 # Memory Usage (%)
 (1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
 
+# Network I/O - Receive Bytes/sec (Required)
+sum(rate(node_network_receive_bytes_total{device!~"lo|veth.*"}[5m]))
+
+# Network I/O - Transmit Bytes/sec (Required)
+sum(rate(node_network_transmit_bytes_total{device!~"lo|veth.*"}[5m]))
+
+# Disk I/O - Read Bytes/sec
+sum(rate(node_disk_read_bytes_total[5m]))
+
+# Disk I/O - Write Bytes/sec
+sum(rate(node_disk_write_bytes_total[5m]))
+
 # Pending Pods
 sum(kube_pod_status_phase{phase="Pending"})
 
@@ -429,9 +441,11 @@ kubectl apply -f https://github.com/kubernetes/kube-state-metrics/releases/downl
 - Panel 1: Current node count (gauge)
 - Panel 2: CPU utilization (time series, 24h view)
 - Panel 3: Memory utilization (time series, 24h view)
-- Panel 4: Pending pods (counter)
-- Panel 5: Scaling events timeline (annotations)
-- Panel 6: Pod distribution by node (heatmap)
+- Panel 4: Network I/O (time series, receive + transmit MB/s)
+- Panel 5: Disk I/O (time series, read + write MB/s)
+- Panel 6: Pending pods (counter)
+- Panel 7: Scaling events timeline (annotations)
+- Panel 8: Pod distribution by node (heatmap)
 
 **Dashboard 2: Autoscaler Performance**
 

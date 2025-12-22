@@ -89,6 +89,11 @@ This document outlines the **cost-optimized, scalable solution** for building th
 
 ```
 K3s Nodes → node-exporter (9100) → Prometheus (scrapes every 15s)
+            ↓ Metrics Collected:
+            - CPU usage (all cores, all modes)
+            - Memory (available, total, used)
+            - Network I/O (receive/transmit bytes/packets)
+            - Disk I/O (read/write bytes, IOPS)
 K3s API → kube-state-metrics (8080) → Prometheus
 Demo App → /metrics endpoint (3000) → Prometheus
 ```

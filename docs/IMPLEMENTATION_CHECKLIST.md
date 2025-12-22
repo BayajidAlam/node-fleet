@@ -8,7 +8,9 @@
 - [x] **kube-state-metrics installation** - Deployment commands provided
 - [x] **15-second scrape interval** - prometheus.yml configuration
 - [x] **7-day retention** - Helm chart parameters
-- [x] **System metrics** (CPU, memory, disk, network) - PromQL queries provided
+- [x] **System metrics** (CPU, memory) - PromQL queries provided
+- [x] **Network I/O metrics** - Network receive/transmit bytes per second
+- [x] **Disk I/O metrics** - Disk read/write bytes per second  
 - [x] **K8s metrics** (pod count, pending pods, node conditions) - kube-state-metrics
 - [x] **Application metrics** (latency, error rates) - Demo app integration
 - [x] **Secure API exposure** - NodePort with Security Group restrictions
