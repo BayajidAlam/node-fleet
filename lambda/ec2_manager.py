@@ -6,8 +6,11 @@ Handles instance launch and termination with Multi-AZ support and spot instances
 import logging
 import boto3
 import subprocess
+import os
 from typing import Dict, List
 from botocore.exceptions import ClientError
+from kubernetes import client, config
+from kubernetes.client.rest import ApiException
 from multi_az_helper import select_subnet_for_new_instance, get_az_distribution
 from spot_instance_helper import (
     calculate_spot_ondemand_mix,
@@ -287,15 +290,86 @@ class EC2Manager:
             True if successful, False otherwise
         """
         try:
-            # Note: In production, this would use kubectl via the K8s API
-            # For now, we log the action
-            logger.info(f"Would drain node {node_name} with timeout {timeout}s")
+            # Load kubeconfig from environment or default location
+            kubeconfig_path = os.environ.get('KUBECONFIG', '/tmp/kubeconfig')
+            if os.path.exists(kubeconfig_path):
+                config.load_kube_config(config_file=kubeconfig_path)
+            else:
+                # Try in-cluster config (if Lambda runs with service account)
+                try:
+                    config.load_incluster_config()
+                except:
+                    logger.warning(f"No kubeconfig found, skipping drain for {node_name}")
+                    return True
             
-            # In real implementation:
-            # kubectl drain {node_name} --ignore-daemonsets --delete-emptydir-data --timeout={timeout}s
+            v1 = client.CoreV1Api()
             
+            # Step 1: Cordon the node (mark as unschedulable)
+            logger.info(f"Cordoning node {node_name}")
+            body = {
+                "spec": {
+                    "unschedulable": True
+                }
+            }
+            v1.patch_node(node_name, body)
+            
+            # Step 2: Get all pods on the node
+            logger.info(f"Getting pods on node {node_name}")
+            field_selector = f"spec.nodeName={node_name}"
+            pods = v1.list_pod_for_all_namespaces(field_selector=field_selector)
+            
+            # Step 3: Delete pods (ignore daemonsets and emptyDir volumes)
+            pods_to_delete = []
+            for pod in pods.items:
+                # Skip if pod is owned by DaemonSet
+                if pod.metadata.owner_references:
+                    for owner in pod.metadata.owner_references:
+                        if owner.kind == "DaemonSet":
+                            logger.info(f"Skipping DaemonSet pod {pod.metadata.name}")
+                            continue
+                
+                # Check for static pods (mirror pods)
+                if pod.metadata.annotations and 'kubernetes.io/config.mirror' in pod.metadata.annotations:
+                    logger.info(f"Skipping static pod {pod.metadata.name}")
+                    continue
+                
+                pods_to_delete.append(pod)
+            
+            logger.info(f"Draining {len(pods_to_delete)} pods from node {node_name}")
+            
+            # Step 4: Evict pods with grace period
+            for pod in pods_to_delete:
+                try:
+                    # Use eviction API for graceful pod termination
+                    eviction = client.V1Eviction(
+                        metadata=client.V1ObjectMeta(
+                            name=pod.metadata.name,
+                            namespace=pod.metadata.namespace
+                        ),
+                        delete_options=client.V1DeleteOptions(
+                            grace_period_seconds=30
+                        )
+                    )
+                    v1.create_namespaced_pod_eviction(
+                        name=pod.metadata.name,
+                        namespace=pod.metadata.namespace,
+                        body=eviction
+                    )
+                    logger.info(f"Evicted pod {pod.metadata.namespace}/{pod.metadata.name}")
+                except ApiException as e:
+                    if e.status == 404:
+                        logger.info(f"Pod {pod.metadata.name} already deleted")
+                    elif e.status == 429:
+                        logger.warning(f"PodDisruptionBudget prevents eviction of {pod.metadata.name}")
+                    else:
+                        logger.error(f"Failed to evict pod {pod.metadata.name}: {e}")
+            
+            logger.info(f"Successfully drained node {node_name}")
             return True
             
+        except ApiException as e:
+            logger.error(f"Kubernetes API error while draining node {node_name}: {e}")
+            return False
         except Exception as e:
             logger.error(f"Failed to drain node {node_name}: {str(e)}")
             return False
