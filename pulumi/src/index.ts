@@ -30,6 +30,12 @@ import {
   workerLaunchTemplate,
   workerSpotTemplate,
 } from "./ec2-worker";
+import {
+  autoscalerLambda,
+  autoscalerSchedule,
+  autoscalerLambdaArn,
+  autoscalerScheduleName,
+} from "./lambda";
 
 // Export all infrastructure outputs
 export const vpcId = vpc.id;
@@ -54,3 +60,7 @@ export const masterPublicIpAddress = masterPublicIp;
 export const masterPrivateIpAddress = masterPrivateIp;
 export const workerLaunchTemplateId = workerLaunchTemplate.id;
 export const workerSpotLaunchTemplateId = workerSpotTemplate.id;
+
+// Lambda autoscaler exports
+export const autoscalerFunctionArn = autoscalerLambdaArn;
+export const autoscalerScheduleRuleName = autoscalerScheduleName;
