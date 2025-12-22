@@ -4,6 +4,8 @@ kind: Deployment
 metadata:
   name: cost-exporter
   namespace: monitoring
+  labels:
+    app: cost-exporter
 spec:
   replicas: 1
   selector:
@@ -13,6 +15,10 @@ spec:
     metadata:
       labels:
         app: cost-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: cost-exporter
       containers:
@@ -29,12 +35,37 @@ spec:
               name: metrics
           env:
             - name: AWS_REGION
-              value: "ap-south-1"
+              value: "ap-southeast-1"
             - name: CLUSTER_NAME
               value: "node-fleet"
+            - name: MONTHLY_BUDGET
+              value: "500"
+            - name: UPDATE_INTERVAL
+              value: "30"
+            - name: METRICS_PORT
+              value: "9100"
           volumeMounts:
             - name: exporter-script
               mountPath: /app
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9100
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9100
+            initialDelaySeconds: 10
+            periodSeconds: 10
       volumes:
         - name: exporter-script
           configMap:
