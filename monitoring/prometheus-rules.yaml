@@ -2,14 +2,6 @@ groups:
   - name: autoscaler_alerts
     interval: 30s
     rules:
-          # High CPU alert
-          - alert: HighCPUUsage
-            expr: avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100 > 70
-            for: 3m
-            labels:
-              severity: warning
-              component: autoscaler
-            annotations:
       # High CPU alert
       - alert: HighCPUUsage
         expr: avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100 > 70
