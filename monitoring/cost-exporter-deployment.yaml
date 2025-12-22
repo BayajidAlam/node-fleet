@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cost-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cost-exporter
+  template:
+    metadata:
+      labels:
+        app: cost-exporter
+    spec:
+      serviceAccountName: cost-exporter
+      containers:
+      - name: cost-exporter
+        image: python:3.11-slim
+        command:
+          - /bin/sh
+          - -c
+          - |
+            pip install boto3 prometheus-client
+            python /app/cost-exporter.py
+        ports:
+        - containerPort: 9100
+          name: metrics
+        env:
+        - name: AWS_REGION
+          value: "ap-south-1"
+        - name: CLUSTER_NAME
+          value: "node-fleet"
+        volumeMounts:
+        - name: exporter-script
+          mountPath: /app
+      volumes:
+      - name: exporter-script
+        configMap:
+          name: cost-exporter-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cost-exporter
+  namespace: monitoring
+  labels:
+    app: cost-exporter
+spec:
+  selector:
+    app: cost-exporter
+  ports:
+  - port: 9100
+    targetPort: 9100
+    name: metrics
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cost-exporter
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cost-exporter
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cost-exporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cost-exporter
+subjects:
+- kind: ServiceAccount
+  name: cost-exporter
+  namespace: monitoring
