@@ -18,6 +18,7 @@ from ec2_manager import EC2Manager
 from slack_notifier import send_notification
 from scaling_decision import ScalingDecision
 from predictive_scaling import PredictiveScaler
+from custom_metrics import get_custom_metrics
 
 # Configure logging
 logger = logging.getLogger()
@@ -34,6 +35,7 @@ WORKER_LAUNCH_TEMPLATE_ID = os.environ.get("WORKER_LAUNCH_TEMPLATE_ID")
 WORKER_SPOT_TEMPLATE_ID = os.environ.get("WORKER_SPOT_TEMPLATE_ID")
 SPOT_PERCENTAGE = int(os.environ.get("SPOT_PERCENTAGE", "70"))
 ENABLE_PREDICTIVE_SCALING = os.environ.get("ENABLE_PREDICTIVE_SCALING", "true").lower() == "true"
+ENABLE_CUSTOM_METRICS = os.environ.get("ENABLE_CUSTOM_METRICS", "false").lower() == "true"
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -75,7 +77,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     node_count=current_nodes
                 )
             
-            # Step 3: Decide scaling action (reactive + predictive)
+            # Step 3: Decide scaling action (reactive + predictive + custom metrics)
             logger.info(f"Step 3: Evaluating scaling decision (current nodes: {current_nodes})")
             decision_engine = ScalingDecision(
                 min_nodes=MIN_NODES,
@@ -84,8 +86,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 last_scale_time=current_state.get("last_scale_time", 0)
             )
             
-            # Reactive scaling decision
-            action = decision_engine.evaluate(metrics)
+            # Collect custom application metrics if enabled
+            custom_metrics_eval = None
+            if ENABLE_CUSTOM_METRICS and PROMETHEUS_URL:
+                logger.info("Collecting custom application metrics")
+                try:
+                    custom_metrics_eval = get_custom_metrics(PROMETHEUS_URL)
+                    logger.info(f"Custom metrics: {custom_metrics_eval}")
+                except Exception as e:
+                    logger.warning(f"Failed to collect custom metrics: {e}")
+            
+            # Reactive scaling decision (includes custom metrics)
+            action = decision_engine.evaluate(metrics, custom_metrics=custom_metrics_eval)
             logger.info(f"Reactive scaling decision: {action}")
             
             # Predictive scaling check (if enabled and no immediate action needed)

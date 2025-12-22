@@ -29,9 +29,13 @@ class ScalingDecision:
         self.current_nodes = current_nodes
         self.last_scale_time = last_scale_time
     
-    def evaluate(self, metrics: Dict[str, float]) -> Dict:
+    def evaluate(self, metrics: Dict[str, float], custom_metrics: Dict = None) -> Dict:
         """
         Evaluate metrics and return scaling decision
+        
+        Args:
+            metrics: Standard cluster metrics (CPU, memory, pending pods)
+            custom_metrics: Optional custom application metrics
         
         Returns:
             Dictionary with 'action' (scale_up/scale_down/none), 'nodes', 'reason'
@@ -54,6 +58,11 @@ class ScalingDecision:
         
         if pending_pods > 0:
             scale_up_reasons.append(f"Pending pods: {int(pending_pods)}")
+        
+        # Check custom metrics if provided
+        if custom_metrics and custom_metrics.get('scale_needed'):
+            custom_reasons = custom_metrics.get('reasons', [])
+            scale_up_reasons.extend([f"Custom: {r}" for r in custom_reasons])
         
         if scale_up_reasons:
             # Check cooldown
