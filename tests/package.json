@@ -1,0 +1,60 @@
+{
+  "name": "smartscale-tests",
+  "version": "1.0.0",
+  "description": "TypeScript test suite for SmartScale K3s Autoscaler",
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration --testTimeout=30000",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:ci": "jest --ci --coverage --reporters=default --reporters=jest-junit"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.485.0",
+    "@aws-sdk/client-ec2": "^3.485.0",
+    "@aws-sdk/client-lambda": "^3.485.0",
+    "@aws-sdk/client-secrets-manager": "^3.485.0",
+    "@aws-sdk/client-sns": "^3.485.0",
+    "@pulumi/aws": "^7.15.0",
+    "@pulumi/pulumi": "^3.213.0",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "aws-sdk-client-mock": "^3.0.1",
+    "aws-sdk-client-mock-jest": "^3.0.1",
+    "jest": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/tests"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.ts",
+      "**/?(*.)+(spec|test).ts"
+    ],
+    "collectCoverageFrom": [
+      "tests/**/*.ts",
+      "!tests/**/*.test.ts",
+      "!tests/**/*.spec.ts"
+    ],
+    "coverageThresholds": {
+      "global": {
+        "branches": 80,
+        "functions": 80,
+        "lines": 85,
+        "statements": 85
+      }
+    },
+    "coverageDirectory": "coverage",
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json"
+    ]
+  }
+}

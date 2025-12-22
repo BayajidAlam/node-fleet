@@ -1,0 +1,179 @@
+{
+  "dashboard": {
+    "title": "Node-Fleet Cost Dashboard",
+    "tags": ["cost", "aws", "node-fleet"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "5m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Real-Time Hourly Cost",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 4
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Daily Cost Projection",
+        "type": "stat",
+        "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 24",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Monthly Cost Projection",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 730",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 50, "color": "yellow" },
+                { "value": 100, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Cost Savings vs Always-On",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0416 * 10))) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 1
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Cost Trend (24h)",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+            "legendFormat": "Current Cost/Hour",
+            "refId": "A"
+          },
+          {
+            "expr": "0.0416 * 10",
+            "legendFormat": "Max Cost (10 nodes)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          { "format": "currencyUSD", "label": "Cost/Hour" },
+          { "format": "short" }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Cost Breakdown by Instance Type",
+        "type": "piechart",
+        "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (instance_type) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+            "format": "time_series",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Cost Breakdown: Spot vs On-Demand",
+        "type": "piechart",
+        "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+            "format": "time_series",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "CloudWatch Billing (All AWS Services)",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+        "targets": [
+          {
+            "namespace": "AWS/Billing",
+            "metricName": "EstimatedCharges",
+            "dimensions": {
+              "Currency": "USD"
+            },
+            "statistics": ["Maximum"],
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          { "format": "currencyUSD", "label": "Total AWS Cost" },
+          { "format": "short" }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Instance Count by Type",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 28, "w": 24, "h": 6 },
+        "targets": [
+          {
+            "expr": "count by (instance_type, lifecycle) (up{job=\"kubernetes-nodes\"})",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}

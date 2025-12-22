@@ -1,0 +1,3 @@
+name: node-fleet
+runtime: nodejs
+description: NodeFleet K3s Autoscaler Infrastructure as Code
