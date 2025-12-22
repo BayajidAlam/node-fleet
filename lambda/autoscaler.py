@@ -10,6 +10,7 @@ Orchestrates the 5-step scaling workflow with predictive scaling:
 
 import os
 import logging
+import boto3
 from datetime import datetime
 from typing import Dict, Any
 from metrics_collector import collect_metrics
@@ -23,6 +24,9 @@ from custom_metrics import get_custom_metrics
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# CloudWatch client for custom metrics
+cloudwatch = boto3.client('cloudwatch')
 
 # Environment variables
 CLUSTER_ID = os.environ.get("CLUSTER_ID", "node-fleet-cluster")
@@ -129,6 +133,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             if action["action"] == "none":
                 logger.info("No scaling action needed")
+                # Still publish metrics for monitoring
+                publish_cloudwatch_metrics(
+                    action='none',
+                    metrics=metrics,
+                    new_node_count=current_nodes,
+                    success=True
+                )
                 return {
                     "statusCode": 200,
                     "body": f"No scaling needed. Metrics: {metrics}"
@@ -157,6 +168,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             new_node_count = current_nodes + (action["nodes"] if action["action"] == "scale_up" else -action["nodes"])
             state_manager.update_state(new_node_count)
             
+            # Publish CloudWatch metrics
+            node_join_latency = result.get('node_join_latency_ms')
+            publish_cloudwatch_metrics(
+                action=action['action'],
+                metrics=metrics,
+                new_node_count=new_node_count,
+                success=True,
+                node_join_latency_ms=node_join_latency
+            )
+            
             # Step 5: Send Slack notification
             logger.info("Step 5: Sending Slack notification")
             notification_message = format_notification(action, result, new_node_count, metrics)
@@ -174,6 +195,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     
     except Exception as e:
         logger.error(f"Autoscaler error: {str(e)}", exc_info=True)
+        
+        # Publish failure metrics
+        try:
+            error_type = type(e).__name__
+            publish_cloudwatch_metrics(
+                action='error',
+                metrics=metrics if 'metrics' in locals() else {},
+                new_node_count=current_nodes if 'current_nodes' in locals() else 0,
+                success=False,
+                error_type=error_type
+            )
+        except:
+            pass  # Don't fail if metrics publishing fails
         
         # Send error notification
         error_message = f"🔴 *Autoscaler Error*\n```{str(e)}```"
@@ -203,3 +237,98 @@ def format_notification(action: Dict, result: Dict, new_node_count: int, metrics
         message += f"*Instance IDs:* {', '.join(result['instance_ids'][:3])}"
     
     return message
+
+
+def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, success: bool = True, error_type: str = None, node_join_latency_ms: int = None) -> None:
+    """Publish custom CloudWatch metrics for monitoring and alarms"""
+    try:
+        metric_data = [
+            # Autoscaler invocation count
+            {
+                'MetricName': 'AutoscalerInvocations',
+                'Value': 1,
+                'Unit': 'Count',
+                'Timestamp': datetime.utcnow()
+            },
+            # Current node count
+            {
+                'MetricName': 'CurrentNodeCount',
+                'Value': new_node_count,
+                'Unit': 'Count',
+                'Timestamp': datetime.utcnow()
+            },
+            # Cluster CPU utilization
+            {
+                'MetricName': 'ClusterCPUUtilization',
+                'Value': metrics.get('cpu_usage', 0),
+                'Unit': 'Percent',
+                'Timestamp': datetime.utcnow()
+            },
+            # Cluster memory utilization
+            {
+                'MetricName': 'ClusterMemoryUtilization',
+                'Value': metrics.get('memory_usage', 0),
+                'Unit': 'Percent',
+                'Timestamp': datetime.utcnow()
+            },
+            # Pending pods count
+            {
+                'MetricName': 'PendingPods',
+                'Value': metrics.get('pending_pods', 0),
+                'Unit': 'Count',
+                'Timestamp': datetime.utcnow()
+            }
+        ]
+        
+        # Add scaling event metrics
+        if action == 'scale_up':
+            metric_data.append({
+                'MetricName': 'ScaleUpEvents',
+                'Value': 1,
+                'Unit': 'Count',
+                'Timestamp': datetime.utcnow()
+            })
+        elif action == 'scale_down':
+            metric_data.append({
+                'MetricName': 'ScaleDownEvents',
+                'Value': 1,
+                'Unit': 'Count',
+                'Timestamp': datetime.utcnow()
+            })
+        
+        # Add failure metrics if not successful
+        if not success:
+            metric_data.append({
+                'MetricName': 'ScalingFailures',
+                'Value': 1,
+                'Unit': 'Count',
+                'Timestamp': datetime.utcnow(),
+                'Dimensions': [
+                    {
+                        'Name': 'ErrorType',
+                        'Value': error_type or 'Unknown'
+                    }
+                ]
+            })
+        
+        # Add node join latency if provided
+        if node_join_latency_ms is not None:
+            metric_data.append({
+                'MetricName': 'NodeJoinLatency',
+                'Value': node_join_latency_ms,
+                'Unit': 'Milliseconds',
+                'Timestamp': datetime.utcnow()
+            })
+        
+        # Publish metrics in batches (CloudWatch allows max 20 per call)
+        for i in range(0, len(metric_data), 20):
+            batch = metric_data[i:i+20]
+            cloudwatch.put_metric_data(
+                Namespace='NodeFleet/Autoscaler',
+                MetricData=batch
+            )
+        
+        logger.info(f"Published {len(metric_data)} CloudWatch metrics")
+    
+    except Exception as e:
+        logger.warning(f"Failed to publish CloudWatch metrics: {e}")

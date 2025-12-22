@@ -29,6 +29,16 @@ import {
   autoscalerLambdaArn,
   autoscalerScheduleName,
 } from "./lambda";
+import {
+  scalingFailureAlarmArn,
+  cpuOverloadAlarmArn,
+  maxCapacityAlarmArn,
+  nodeJoinFailureAlarmArn,
+  highMemoryAlarmArn,
+  lambdaTimeoutAlarmArn,
+  lambdaErrorAlarmArn,
+  pendingPodsAlarmArn,
+} from "./cloudwatch-alarms";
 
 // Export all infrastructure outputs
 export const vpcId = vpc.id;
@@ -57,3 +67,15 @@ export const workerSpotLaunchTemplateId = workerSpotTemplate.id;
 // Lambda autoscaler exports
 export const autoscalerFunctionArn = autoscalerLambdaArn;
 export const autoscalerScheduleRuleName = autoscalerScheduleName;
+
+// CloudWatch alarm exports
+export const alarms = {
+  scalingFailure: scalingFailureAlarmArn,
+  cpuOverload: cpuOverloadAlarmArn,
+  maxCapacity: maxCapacityAlarmArn,
+  nodeJoinFailure: nodeJoinFailureAlarmArn,
+  highMemory: highMemoryAlarmArn,
+  lambdaTimeout: lambdaTimeoutAlarmArn,
+  lambdaError: lambdaErrorAlarmArn,
+  pendingPods: pendingPodsAlarmArn,
+};
