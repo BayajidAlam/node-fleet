@@ -1,0 +1,344 @@
+{
+  "dashboard": {
+    "title": "AWS Cost Analytics - Advanced",
+    "tags": ["cost", "aws", "optimization"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Cluster Cost",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "aws_cluster_total_cost_hourly{cluster=\"node-fleet\"}",
+            "legendFormat": "Hourly Cost"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 4,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": null, "color": "green" },
+                { "value": 1, "color": "yellow" },
+                { "value": 2, "color": "red" }
+              ]
+            }
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "orientation": "auto"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Monthly Projected Cost",
+        "type": "stat",
+        "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "aws_cluster_total_cost_monthly{cluster=\"node-fleet\"}",
+            "legendFormat": "Monthly"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": null, "color": "green" },
+                { "value": 300, "color": "yellow" },
+                { "value": 500, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Budget Usage",
+        "type": "gauge",
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "aws_budget_usage_percentage{cluster=\"node-fleet\"}",
+            "legendFormat": "Budget %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": null, "color": "green" },
+                { "value": 70, "color": "yellow" },
+                { "value": 90, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Spot Savings",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "aws_spot_savings_percentage{cluster=\"node-fleet\"}",
+            "legendFormat": "Savings %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 1,
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": null, "color": "red" },
+                { "value": 20, "color": "yellow" },
+                { "value": 40, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Cost Trend (Hourly)",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 4, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "aws_cluster_total_cost_hourly{cluster=\"node-fleet\"}",
+            "legendFormat": "Total Cost"
+          },
+          {
+            "expr": "aws_cost_by_lifecycle{cluster=\"node-fleet\",lifecycle=\"spot\"}",
+            "legendFormat": "Spot Instances"
+          },
+          {
+            "expr": "aws_cost_by_lifecycle{cluster=\"node-fleet\",lifecycle=\"on-demand\"}",
+            "legendFormat": "On-Demand"
+          }
+        ],
+        "yaxes": [
+          { "format": "currencyUSD", "label": "Cost/Hour" },
+          { "format": "short" }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Cost by Instance Type",
+        "type": "piechart",
+        "gridPos": { "x": 12, "y": 4, "w": 6, "h": 6 },
+        "targets": [
+          {
+            "expr": "aws_cost_by_instance_type{cluster=\"node-fleet\"}",
+            "legendFormat": "{{instance_type}}"
+          }
+        ],
+        "options": {
+          "legend": { "display": true, "placement": "bottom" },
+          "pieType": "pie",
+          "displayLabels": ["percent"]
+        }
+      },
+      {
+        "id": 7,
+        "title": "Cost by Availability Zone",
+        "type": "piechart",
+        "gridPos": { "x": 18, "y": 4, "w": 6, "h": 6 },
+        "targets": [
+          {
+            "expr": "aws_cost_by_availability_zone{cluster=\"node-fleet\"}",
+            "legendFormat": "{{availability_zone}}"
+          }
+        ],
+        "options": {
+          "legend": { "display": true, "placement": "bottom" },
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 8,
+        "title": "Cost Efficiency Metrics",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 10, "w": 12, "h": 5 },
+        "targets": [
+          {
+            "expr": "aws_cost_per_pod{cluster=\"node-fleet\"}",
+            "legendFormat": "Cost per Pod",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "aws_cost_per_cpu_core{cluster=\"node-fleet\"}",
+            "legendFormat": "Cost per CPU",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "aws_cost_per_gb_memory{cluster=\"node-fleet\"}",
+            "legendFormat": "Cost per GB RAM",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Optimization Opportunities",
+        "type": "bargauge",
+        "gridPos": { "x": 12, "y": 10, "w": 12, "h": 5 },
+        "targets": [
+          {
+            "expr": "aws_potential_savings_hourly{cluster=\"node-fleet\"}",
+            "legendFormat": "{{optimization_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": { "mode": "palette-classic" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": null, "color": "green" },
+                { "value": 0.1, "color": "yellow" },
+                { "value": 0.5, "color": "red" }
+              ]
+            }
+          }
+        },
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "gradient"
+        }
+      },
+      {
+        "id": 10,
+        "title": "Instance Cost Breakdown",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 15, "w": 24, "h": 6 },
+        "targets": [
+          {
+            "expr": "aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}",
+            "legendFormat": "",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": { "Time": true, "cluster": true },
+              "indexByName": {
+                "instance_id": 0,
+                "instance_type": 1,
+                "lifecycle": 2,
+                "availability_zone": 3,
+                "Value": 4
+              },
+              "renameByName": {
+                "instance_id": "Instance ID",
+                "instance_type": "Type",
+                "lifecycle": "Lifecycle",
+                "availability_zone": "AZ",
+                "Value": "Cost/Hour"
+              }
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": { "align": "left" },
+            "unit": "currencyUSD"
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "Lifecycle" },
+              "properties": [
+                {
+                  "id": "custom.displayMode",
+                  "value": "color-background"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 11,
+        "title": "Daily Cost Comparison",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 21, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "aws_cluster_total_cost_daily{cluster=\"node-fleet\"}",
+            "legendFormat": "Current Daily Rate"
+          }
+        ],
+        "yaxes": [
+          { "format": "currencyUSD", "label": "Daily Cost" },
+          { "format": "short" }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": { "params": [120], "type": "gt" },
+              "operator": { "type": "and" },
+              "query": { "params": ["A", "5m", "now"] },
+              "reducer": { "params": [], "type": "avg" },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "Daily cost exceeded $120",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 12,
+        "title": "Cost Increase Rate",
+        "type": "graph",
+        "gridPos": { "x": 12, "y": 21, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "aws_cost_increase_rate{cluster=\"node-fleet\"}",
+            "legendFormat": "Rate of Change ($/hr/hr)"
+          }
+        ],
+        "yaxes": [
+          { "format": "currencyUSD", "label": "Cost Change Rate" },
+          { "format": "short" }
+        ]
+      }
+    ]
+  }
+}
