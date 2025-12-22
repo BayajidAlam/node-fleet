@@ -28,7 +28,7 @@ export const igw = new aws.ec2.InternetGateway("node-fleet-igw", {
 export const publicSubnet1 = new aws.ec2.Subnet("public-subnet-1", {
   vpcId: vpc.id,
   cidrBlock: "10.0.1.0/24",
-  availabilityZone: "ap-south-1a",
+  availabilityZone: "ap-southeast-1a",
   mapPublicIpOnLaunch: true,
   tags: {
     Name: `${clusterName}-public-1a`,
@@ -40,7 +40,7 @@ export const publicSubnet1 = new aws.ec2.Subnet("public-subnet-1", {
 export const publicSubnet2 = new aws.ec2.Subnet("public-subnet-2", {
   vpcId: vpc.id,
   cidrBlock: "10.0.2.0/24",
-  availabilityZone: "ap-south-1b",
+  availabilityZone: "ap-southeast-1b",
   mapPublicIpOnLaunch: true,
   tags: {
     Name: `${clusterName}-public-1b`,
@@ -53,7 +53,7 @@ export const publicSubnet2 = new aws.ec2.Subnet("public-subnet-2", {
 export const privateSubnet1 = new aws.ec2.Subnet("private-subnet-1", {
   vpcId: vpc.id,
   cidrBlock: "10.0.11.0/24",
-  availabilityZone: "ap-south-1a",
+  availabilityZone: "ap-southeast-1a",
   tags: {
     Name: `${clusterName}-private-1a`,
     Project: "node-fleet",
@@ -64,7 +64,7 @@ export const privateSubnet1 = new aws.ec2.Subnet("private-subnet-1", {
 export const privateSubnet2 = new aws.ec2.Subnet("private-subnet-2", {
   vpcId: vpc.id,
   cidrBlock: "10.0.12.0/24",
-  availabilityZone: "ap-south-1b",
+  availabilityZone: "ap-southeast-1b",
   tags: {
     Name: `${clusterName}-private-1b`,
     Project: "node-fleet",
