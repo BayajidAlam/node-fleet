@@ -3,8 +3,16 @@ Unit tests for metrics_collector module
 """
 
 import pytest
+import sys
+import os
 from unittest.mock import Mock, patch, MagicMock
-from lambda.metrics_collector import collect_metrics
+
+# Import using importlib to avoid 'lambda' reserved keyword
+import importlib.util
+spec = importlib.util.spec_from_file_location("metrics_collector", os.path.join(os.path.dirname(__file__), '../../lambda/metrics_collector.py'))
+metrics_collector_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(metrics_collector_module)
+collect_metrics = metrics_collector_module.collect_metrics
 
 
 @pytest.fixture

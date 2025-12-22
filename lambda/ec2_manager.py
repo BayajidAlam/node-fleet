@@ -1,6 +1,6 @@
 """
 EC2 manager for scaling worker nodes
-Handles instance launch and termination
+Handles instance launch and termination with Multi-AZ support
 """
 
 import logging
@@ -8,18 +8,21 @@ import boto3
 import subprocess
 from typing import Dict, List
 from botocore.exceptions import ClientError
+from multi_az_helper import select_subnet_for_new_instance, get_az_distribution
 
 logger = logging.getLogger()
 
 
 class EC2Manager:
-    """Manages EC2 worker node scaling operations"""
+    """Manages EC2 worker node scaling operations with Multi-AZ distribution"""
     
     def __init__(self, worker_template_id: str, worker_spot_template_id: str, spot_percentage: int = 70):
         self.worker_template_id = worker_template_id
         self.worker_spot_template_id = worker_spot_template_id
         self.spot_percentage = spot_percentage
         self.ec2_client = boto3.client('ec2')
+        # Multi-AZ: Subnet IDs for ap-south-1a and ap-south-1b
+        self.available_subnets = self._get_cluster_subnets()
     
     def scale_up(self, nodes_to_add: int, reason: str) -> Dict:
         """
@@ -131,14 +134,41 @@ class EC2Manager:
             
         except Exception as e:
             logger.error(f"Failed to scale down: {str(e)}")
-            raise
+         get_cluster_subnets(self) -> List[str]:
+        """Get public subnet IDs for the cluster (Multi-AZ)"""
+        try:
+            response = self.ec2_client.describe_subnets(
+                Filters=[
+                    {'Name': 'tag:Project', 'Values': ['node-fleet']},
+                    {'Name': 'tag:Type', 'Values': ['public']}
+                ]
+            )
+            return [subnet['SubnetId'] for subnet in response['Subnets']]
+        except Exception as e:
+            logger.error(f"Error fetching subnets: {e}")
+            return []
     
     def _launch_instances(self, template_id: str, count: int, instance_type: str) -> List[str]:
-        """Launch EC2 instances from launch template"""
+        """Launch EC2 instances from launch template with Multi-AZ distribution"""
         try:
-            response = self.ec2_client.run_instances(
-                LaunchTemplate={'LaunchTemplateId': template_id},
-                MinCount=count,
+            # Get existing instances for AZ balancing
+            existing_instances = self._get_worker_instances()
+            current_distribution = get_az_distribution(existing_instances)
+            logger.info(f"Current AZ distribution: {current_distribution}")
+            
+            instance_ids = []
+            
+            # Launch instances one at a time to ensure even AZ distribution
+            for i in range(count):
+                # Select subnet with fewest instances
+                subnet_id = select_subnet_for_new_instance(existing_instances, self.available_subnets)
+                
+                response = self.ec2_client.run_instances(
+                    LaunchTemplate={'LaunchTemplateId': template_id},
+                    MinCount=1,
+                    MaxCount=1,
+                    SubnetId=subnet_id  # Multi-AZ: Distribute across subnets
+                    MinCount=count,
                 MaxCount=count
             )
             
