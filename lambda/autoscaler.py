@@ -1,21 +1,23 @@
 """
 Main Lambda handler for K3s autoscaler
-Orchestrates the 5-step scaling workflow:
+Orchestrates the 5-step scaling workflow with predictive scaling:
 1. Query Prometheus metrics
 2. Acquire DynamoDB lock
-3. Decide scaling action
+3. Decide scaling action (reactive + predictive)
 4. Execute EC2 scaling
 5. Send Slack notification
 """
 
 import os
 import logging
+from datetime import datetime
 from typing import Dict, Any
 from metrics_collector import collect_metrics
 from state_manager import StateManager
 from ec2_manager import EC2Manager
 from slack_notifier import send_notification
 from scaling_decision import ScalingDecision
+from predictive_scaling import PredictiveScaler
 
 # Configure logging
 logger = logging.getLogger()
@@ -25,11 +27,13 @@ logger.setLevel(logging.INFO)
 CLUSTER_ID = os.environ.get("CLUSTER_ID", "node-fleet-cluster")
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL")
 STATE_TABLE = os.environ.get("STATE_TABLE")
+METRICS_HISTORY_TABLE = os.environ.get("METRICS_HISTORY_TABLE")
 MIN_NODES = int(os.environ.get("MIN_NODES", "2"))
 MAX_NODES = int(os.environ.get("MAX_NODES", "10"))
 WORKER_LAUNCH_TEMPLATE_ID = os.environ.get("WORKER_LAUNCH_TEMPLATE_ID")
 WORKER_SPOT_TEMPLATE_ID = os.environ.get("WORKER_SPOT_TEMPLATE_ID")
 SPOT_PERCENTAGE = int(os.environ.get("SPOT_PERCENTAGE", "70"))
+ENABLE_PREDICTIVE_SCALING = os.environ.get("ENABLE_PREDICTIVE_SCALING", "true").lower() == "true"
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -59,7 +63,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             current_state = state_manager.get_state()
             current_nodes = current_state.get("node_count", MIN_NODES)
             
-            # Step 3: Decide scaling action
+            # Store current metrics for predictive analysis
+            if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE:
+                logger.info("Storing metrics for predictive analysis")
+                predictor = PredictiveScaler(METRICS_HISTORY_TABLE)
+                predictor.store_metrics(
+                    timestamp=datetime.utcnow(),
+                    cpu_percent=metrics.get('cpu_percent', 0),
+                    memory_percent=metrics.get('memory_percent', 0),
+                    pending_pods=metrics.get('pending_pods', 0),
+                    node_count=current_nodes
+                )
+            
+            # Step 3: Decide scaling action (reactive + predictive)
             logger.info(f"Step 3: Evaluating scaling decision (current nodes: {current_nodes})")
             decision_engine = ScalingDecision(
                 min_nodes=MIN_NODES,
@@ -68,8 +84,36 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 last_scale_time=current_state.get("last_scale_time", 0)
             )
             
+            # Reactive scaling decision
             action = decision_engine.evaluate(metrics)
-            logger.info(f"Scaling decision: {action}")
+            logger.info(f"Reactive scaling decision: {action}")
+            
+            # Predictive scaling check (if enabled and no immediate action needed)
+            if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE and action["action"] == "none":
+                logger.info("Checking predictive scaling recommendations")
+                predictor = PredictiveScaler(METRICS_HISTORY_TABLE)
+                prediction = predictor.predict_next_hour_load(metrics)
+                
+                if prediction:
+                    should_scale, reason = predictor.should_proactive_scale_up(
+                        current_metrics=metrics,
+                        prediction=prediction
+                    )
+                    
+                    if should_scale:
+                        recommended_nodes = predictor.calculate_recommended_nodes(
+                            prediction=prediction,
+                            current_nodes=current_nodes
+                        )
+                        nodes_to_add = min(recommended_nodes - current_nodes, 2)  # Max 2 nodes proactively
+                        
+                        if nodes_to_add > 0:
+                            action = {
+                                "action": "scale_up",
+                                "nodes": nodes_to_add,
+                                "reason": f"Predictive: {reason}"
+                            }
+                            logger.info(f"Predictive scaling decision: {action}")
             
             if action["action"] == "none":
                 logger.info("No scaling action needed")
