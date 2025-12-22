@@ -21,12 +21,10 @@ export const stateTable = new aws.dynamodb.Table("autoscaler-state", {
 export const metricsHistoryTable = new aws.dynamodb.Table("metrics-history", {
   name: `${clusterName}-metrics-history`,
   billingMode: "PAY_PER_REQUEST",
-  hashKey: "timestamp",  // ISO timestamp as primary key
-  attributes: [
-    { name: "timestamp", type: "S" },
-  ],
+  hashKey: "timestamp", // ISO timestamp as primary key
+  attributes: [{ name: "timestamp", type: "S" }],
   ttl: {
-    attributeName: "ttl",  // Auto-expire old metrics after 30 days
+    attributeName: "ttl", // Auto-expire old metrics after 30 days
     enabled: true,
   },
   pointInTimeRecovery: { enabled: true },
