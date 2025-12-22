@@ -16,6 +16,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["tests/**/*.ts", "tests/**/*.test.ts"],
-  "exclude": ["node_modules", "dist", "coverage"]
+  "include": ["pulumi/**/*.ts", "pulumi/**/*.test.ts", "setup.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "lambda"]
 }

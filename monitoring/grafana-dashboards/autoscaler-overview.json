@@ -11,7 +11,7 @@
         "id": 1,
         "title": "Cluster Node Count",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "count(kube_node_info)",
@@ -20,15 +20,15 @@
           }
         ],
         "yaxes": [
-          {"format": "short", "label": "Nodes"},
-          {"format": "short"}
+          { "format": "short", "label": "Nodes" },
+          { "format": "short" }
         ]
       },
       {
         "id": 2,
         "title": "CPU Usage (%)",
         "type": "graph",
-        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "avg(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) * 100",
@@ -37,16 +37,16 @@
           }
         ],
         "yaxes": [
-          {"format": "percent", "label": "CPU %", "max": 100, "min": 0},
-          {"format": "short"}
+          { "format": "percent", "label": "CPU %", "max": 100, "min": 0 },
+          { "format": "short" }
         ],
         "alert": {
           "conditions": [
             {
-              "evaluator": {"params": [70], "type": "gt"},
-              "operator": {"type": "and"},
-              "query": {"params": ["A", "5m", "now"]},
-              "reducer": {"params": [], "type": "avg"},
+              "evaluator": { "params": [70], "type": "gt" },
+              "operator": { "type": "and" },
+              "query": { "params": ["A", "5m", "now"] },
+              "reducer": { "params": [], "type": "avg" },
               "type": "query"
             }
           ],
@@ -59,7 +59,7 @@
         "id": 3,
         "title": "Memory Usage (%)",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
@@ -68,16 +68,16 @@
           }
         ],
         "yaxes": [
-          {"format": "percent", "label": "Memory %", "max": 100, "min": 0},
-          {"format": "short"}
+          { "format": "percent", "label": "Memory %", "max": 100, "min": 0 },
+          { "format": "short" }
         ],
         "alert": {
           "conditions": [
             {
-              "evaluator": {"params": [75], "type": "gt"},
-              "operator": {"type": "and"},
-              "query": {"params": ["A", "5m", "now"]},
-              "reducer": {"params": [], "type": "avg"},
+              "evaluator": { "params": [75], "type": "gt" },
+              "operator": { "type": "and" },
+              "query": { "params": ["A", "5m", "now"] },
+              "reducer": { "params": [], "type": "avg" },
               "type": "query"
             }
           ],
@@ -88,7 +88,7 @@
         "id": 4,
         "title": "Pending Pods",
         "type": "graph",
-        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "sum(kube_pod_status_phase{phase=\"Pending\"})",
@@ -96,16 +96,13 @@
             "refId": "A"
           }
         ],
-        "yaxes": [
-          {"format": "short", "label": "Pods"},
-          {"format": "short"}
-        ]
+        "yaxes": [{ "format": "short", "label": "Pods" }, { "format": "short" }]
       },
       {
         "id": 5,
         "title": "Scaling Events",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 16, "w": 24, "h": 6},
+        "gridPos": { "x": 0, "y": 16, "w": 24, "h": 6 },
         "targets": [
           {
             "expr": "rate(autoscaler_scale_up_total[5m])",
@@ -123,7 +120,7 @@
         "id": 6,
         "title": "Node Status",
         "type": "table",
-        "gridPos": {"x": 0, "y": 22, "w": 24, "h": 8},
+        "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
         "targets": [
           {
             "expr": "kube_node_info",

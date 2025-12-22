@@ -11,7 +11,7 @@
         "id": 1,
         "title": "Real-Time Hourly Cost",
         "type": "stat",
-        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
         "targets": [
           {
             "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
@@ -29,7 +29,7 @@
         "id": 2,
         "title": "Daily Cost Projection",
         "type": "stat",
-        "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+        "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
         "targets": [
           {
             "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 24",
@@ -47,7 +47,7 @@
         "id": 3,
         "title": "Monthly Cost Projection",
         "type": "stat",
-        "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
         "targets": [
           {
             "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 730",
@@ -61,9 +61,9 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {"value": 0, "color": "green"},
-                {"value": 50, "color": "yellow"},
-                {"value": 100, "color": "red"}
+                { "value": 0, "color": "green" },
+                { "value": 50, "color": "yellow" },
+                { "value": 100, "color": "red" }
               ]
             }
           }
@@ -73,7 +73,7 @@
         "id": 4,
         "title": "Cost Savings vs Always-On",
         "type": "stat",
-        "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+        "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
         "targets": [
           {
             "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0416 * 10))) * 100",
@@ -91,7 +91,7 @@
         "id": 5,
         "title": "Cost Trend (24h)",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 4, "w": 24, "h": 8},
+        "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
         "targets": [
           {
             "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
@@ -105,15 +105,15 @@
           }
         ],
         "yaxes": [
-          {"format": "currencyUSD", "label": "Cost/Hour"},
-          {"format": "short"}
+          { "format": "currencyUSD", "label": "Cost/Hour" },
+          { "format": "short" }
         ]
       },
       {
         "id": 6,
         "title": "Cost Breakdown by Instance Type",
         "type": "piechart",
-        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+        "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "sum by (instance_type) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
@@ -131,7 +131,7 @@
         "id": 7,
         "title": "Cost Breakdown: Spot vs On-Demand",
         "type": "piechart",
-        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+        "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "sum by (lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
@@ -144,7 +144,7 @@
         "id": 8,
         "title": "CloudWatch Billing (All AWS Services)",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 20, "w": 24, "h": 8},
+        "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
         "targets": [
           {
             "namespace": "AWS/Billing",
@@ -157,15 +157,15 @@
           }
         ],
         "yaxes": [
-          {"format": "currencyUSD", "label": "Total AWS Cost"},
-          {"format": "short"}
+          { "format": "currencyUSD", "label": "Total AWS Cost" },
+          { "format": "short" }
         ]
       },
       {
         "id": 9,
         "title": "Instance Count by Type",
         "type": "table",
-        "gridPos": {"x": 0, "y": 28, "w": 24, "h": 6},
+        "gridPos": { "x": 0, "y": 28, "w": 24, "h": 6 },
         "targets": [
           {
             "expr": "count by (instance_type, lifecycle) (up{job=\"kubernetes-nodes\"})",

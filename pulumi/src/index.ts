@@ -21,15 +21,8 @@ import { stateTable, metricsHistoryTable } from "./dynamodb";
 import { k3sSecret, slackSecret } from "./secrets";
 import { slackTopic, slackNotifierLambda } from "./sns";
 import { keyPair } from "./keypair";
-import {
-  masterInstance,
-  masterPublicIp,
-  masterPrivateIp,
-} from "./ec2-master";
-import {
-  workerLaunchTemplate,
-  workerSpotTemplate,
-} from "./ec2-worker";
+import { masterInstance, masterPublicIp, masterPrivateIp } from "./ec2-master";
+import { workerLaunchTemplate, workerSpotTemplate } from "./ec2-worker";
 import {
   autoscalerLambda,
   autoscalerSchedule,
