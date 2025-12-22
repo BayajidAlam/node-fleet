@@ -39,21 +39,7 @@
         "yaxes": [
           { "format": "percent", "label": "CPU %", "max": 100, "min": 0 },
           { "format": "short" }
-        ],
-        "alert": {
-          "conditions": [
-            {
-              "evaluator": { "params": [70], "type": "gt" },
-              "operator": { "type": "and" },
-              "query": { "params": ["A", "5m", "now"] },
-              "reducer": { "params": [], "type": "avg" },
-              "type": "query"
-            }
-          ],
-          "executionErrorState": "alerting",
-          "frequency": "1m",
-          "name": "High CPU Alert"
-        }
+        ]
       },
       {
         "id": 3,
@@ -70,19 +56,7 @@
         "yaxes": [
           { "format": "percent", "label": "Memory %", "max": 100, "min": 0 },
           { "format": "short" }
-        ],
-        "alert": {
-          "conditions": [
-            {
-              "evaluator": { "params": [75], "type": "gt" },
-              "operator": { "type": "and" },
-              "query": { "params": ["A", "5m", "now"] },
-              "reducer": { "params": [], "type": "avg" },
-              "type": "query"
-            }
-          ],
-          "name": "High Memory Alert"
-        }
+        ]
       },
       {
         "id": 4,

@@ -1,4 +1,7 @@
 ---
+# Prometheus Alert Rules ConfigMap
+# NOTE: All alerting is handled by AWS CloudWatch Alarms (see pulumi/src/cloudwatch-alarms.ts)
+# This ConfigMap is deprecated - Prometheus is used only for metrics collection
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,47 +10,10 @@ metadata:
 data:
   alerts.yml: |
     groups:
-    - name: autoscaler_alerts
+    - name: node-fleet-metrics
       interval: 30s
-      rules:
-      - alert: HighCPUUsage
-        expr: avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100 > 70
-        for: 3m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "High CPU usage detected"
-          description: "CPU usage is {{ $value }}% (threshold: 70%)"
-      
-      - alert: HighMemoryUsage
-        expr: (1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 75
-        for: 3m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "High memory usage detected"
-          description: "Memory usage is {{ $value }}% (threshold: 75%)"
-      
-      - alert: PendingPods
-        expr: sum(kube_pod_status_phase{phase="Pending"}) > 0
-        for: 3m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "Pending pods detected"
-          description: "{{ $value }} pods are in pending state"
-      
-      - alert: ScalingFailure
-        expr: increase(autoscaler_scaling_failures_total[5m]) > 0
-        labels:
-          severity: critical
-          component: autoscaler
-        annotations:
-          summary: "Autoscaler scaling failure"
-          description: "Autoscaler failed to scale in the last 5 minutes"
+      rules: []
+
       
       - alert: MaxNodesReached
         expr: count(kube_node_info) >= 10

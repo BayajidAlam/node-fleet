@@ -304,24 +304,7 @@
         "yaxes": [
           { "format": "currencyUSD", "label": "Daily Cost" },
           { "format": "short" }
-        ],
-        "alert": {
-          "conditions": [
-            {
-              "evaluator": { "params": [120], "type": "gt" },
-              "operator": { "type": "and" },
-              "query": { "params": ["A", "5m", "now"] },
-              "reducer": { "params": [], "type": "avg" },
-              "type": "query"
-            }
-          ],
-          "executionErrorState": "alerting",
-          "frequency": "1m",
-          "handler": 1,
-          "name": "Daily cost exceeded $120",
-          "noDataState": "no_data",
-          "notifications": []
-        }
+        ]
       },
       {
         "id": 12,

@@ -1,79 +1,9 @@
+# Prometheus Alert Rules
+# NOTE: All alerting is handled by AWS CloudWatch Alarms (see pulumi/src/cloudwatch-alarms.ts)
+# This file is kept for potential recording rules in the future
+# Prometheus is used only for metrics collection, not alerting
+
 groups:
-  - name: autoscaler_alerts
+  - name: node-fleet-metrics
     interval: 30s
-    rules:
-      # High CPU alert
-      - alert: HighCPUUsage
-        expr: avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100 > 70
-        for: 3m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "High CPU usage detected"
-          description: "Cluster CPU usage is {{ $value | humanize }}% (threshold: 70%)"
-
-      # High Memory alert
-      - alert: HighMemoryUsage
-        expr: (1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 75
-        for: 3m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "High memory usage detected"
-          description: "Cluster memory usage is {{ $value | humanize }}% (threshold: 75%)"
-
-      # Pending pods alert
-      - alert: PendingPods
-        expr: sum(kube_pod_status_phase{phase="Pending"}) > 0
-        for: 5m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "Pods are pending"
-          description: "{{ $value }} pod(s) have been pending for more than 5 minutes"
-
-      # Node unreachable
-      - alert: NodeUnreachable
-        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
-        for: 2m
-        labels:
-          severity: critical
-          component: cluster
-        annotations:
-          summary: "Node is unreachable"
-          description: "Node {{ $labels.node }} is not ready"
-
-      # Autoscaler not running
-      - alert: AutoscalerNotRunning
-        expr: up{job="autoscaler-lambda"} == 0
-        for: 10m
-        labels:
-          severity: critical
-          component: autoscaler
-        annotations:
-          summary: "Autoscaler Lambda is not running"
-          description: "The autoscaler Lambda function has not reported metrics for 10 minutes"
-
-      # At max capacity
-      - alert: AtMaxCapacity
-        expr: count(kube_node_info) >= 10
-        for: 5m
-        labels:
-          severity: warning
-          component: autoscaler
-        annotations:
-          summary: "Cluster at max capacity"
-          description: "Cluster has reached maximum node count ({{ $value }} nodes)"
-
-      # Cost threshold exceeded
-      - alert: CostThresholdExceeded
-        expr: sum(aws_ec2_instance_cost_per_hour{cluster="node-fleet"}) * 730 > 100
-        for: 1h
-        labels:
-          severity: warning
-          component: cost
-        annotations:
-          summary: "Monthly cost projection exceeds threshold"
+    rules: []
