@@ -21,23 +21,12 @@ export const stateTable = new aws.dynamodb.Table("autoscaler-state", {
 export const metricsHistoryTable = new aws.dynamodb.Table("metrics-history", {
   name: `${clusterName}-metrics-history`,
   billingMode: "PAY_PER_REQUEST",
-  hashKey: "cluster_id",
-  rangeKey: "timestamp",
+  hashKey: "timestamp",  // ISO timestamp as primary key
   attributes: [
-    { name: "cluster_id", type: "S" },
-    { name: "timestamp", type: "N" },
-    { name: "hour_of_day", type: "N" },
-  ],
-  globalSecondaryIndexes: [
-    {
-      name: "hour-index",
-      hashKey: "cluster_id",
-      rangeKey: "hour_of_day",
-      projectionType: "ALL",
-    },
+    { name: "timestamp", type: "S" },
   ],
   ttl: {
-    attributeName: "expiry_time",
+    attributeName: "ttl",  // Auto-expire old metrics after 30 days
     enabled: true,
   },
   pointInTimeRecovery: { enabled: true },
