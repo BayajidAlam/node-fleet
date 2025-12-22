@@ -3,9 +3,17 @@ Unit tests for state_manager module
 """
 
 import pytest
+import sys
+import os
 from unittest.mock import Mock, patch, MagicMock
 from botocore.exceptions import ClientError
-from lambda.state_manager import StateManager
+
+# Import using importlib to avoid 'lambda' reserved keyword
+import importlib.util
+spec = importlib.util.spec_from_file_location("state_manager", os.path.join(os.path.dirname(__file__), '../../lambda/state_manager.py'))
+state_manager_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(state_manager_module)
+StateManager = state_manager_module.StateManager
 
 
 @pytest.fixture

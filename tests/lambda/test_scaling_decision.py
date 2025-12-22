@@ -4,7 +4,15 @@ Unit tests for scaling_decision module
 
 import pytest
 import time
-from lambda.scaling_decision import ScalingDecision
+import sys
+import os
+
+# Import using importlib to avoid 'lambda' reserved keyword
+import importlib.util
+spec = importlib.util.spec_from_file_location("scaling_decision", os.path.join(os.path.dirname(__file__), '../../lambda/scaling_decision.py'))
+scaling_decision_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(scaling_decision_module)
+ScalingDecision = scaling_decision_module.ScalingDecision
 
 
 @pytest.fixture

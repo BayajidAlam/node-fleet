@@ -3,8 +3,16 @@ Integration test for complete autoscaler workflow
 """
 
 import pytest
+import sys
+import os
 from unittest.mock import Mock, patch, MagicMock
-from lambda.autoscaler import lambda_handler
+
+# Import using importlib to avoid 'lambda' reserved keyword
+import importlib.util
+spec = importlib.util.spec_from_file_location("autoscaler", os.path.join(os.path.dirname(__file__), '../../lambda/autoscaler.py'))
+autoscaler_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(autoscaler_module)
+lambda_handler = autoscaler_module.lambda_handler
 
 
 @pytest.fixture
