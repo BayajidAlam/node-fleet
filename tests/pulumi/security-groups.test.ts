@@ -1,18 +1,21 @@
-"""
-Unit tests for Pulumi security groups
-"""
+/**
+ * Unit tests for Pulumi security groups
+ */
 
 import * as pulumi from "@pulumi/pulumi";
 import { describe, it, expect } from "@jest/globals";
 
 pulumi.runtime.setMocks({
-  newResource: function(args: pulumi.runtime.MockResourceArgs): {id: string, state: any} {
+  newResource: function (args: pulumi.runtime.MockResourceArgs): {
+    id: string;
+    state: any;
+  } {
     return {
       id: args.inputs.name + "_id",
       state: args.inputs,
     };
   },
-  call: function(args: pulumi.runtime.MockCallArgs) {
+  call: function (args: pulumi.runtime.MockCallArgs) {
     return args.inputs;
   },
 });

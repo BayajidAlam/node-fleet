@@ -1,18 +1,21 @@
-"""
-Unit tests for Pulumi Lambda infrastructure
-"""
+/**
+ * Unit tests for Pulumi Lambda infrastructure
+ */
 
 import * as pulumi from "@pulumi/pulumi";
 import { describe, it, expect } from "@jest/globals";
 
 pulumi.runtime.setMocks({
-  newResource: function(args: pulumi.runtime.MockResourceArgs): {id: string, state: any} {
+  newResource: function (args: pulumi.runtime.MockResourceArgs): {
+    id: string;
+    state: any;
+  } {
     return {
       id: args.inputs.name + "_id",
       state: args.inputs,
     };
   },
-  call: function(args: pulumi.runtime.MockCallArgs) {
+  call: function (args: pulumi.runtime.MockCallArgs) {
     return args.inputs;
   },
 });
@@ -43,7 +46,7 @@ describe("Lambda Autoscaler Infrastructure", () => {
       "WORKER_LAUNCH_TEMPLATE_ID",
       "WORKER_SPOT_TEMPLATE_ID",
       "SPOT_PERCENTAGE",
-      "SNS_TOPIC_ARN"
+      "SNS_TOPIC_ARN",
     ];
     expect(requiredEnvVars).toHaveLength(9);
   });

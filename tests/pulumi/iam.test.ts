@@ -1,18 +1,21 @@
-"""
-Unit tests for Pulumi IAM roles and policies
-"""
+/**
+ * Unit tests for Pulumi IAM roles and policies
+ */
 
 import * as pulumi from "@pulumi/pulumi";
 import { describe, it, expect } from "@jest/globals";
 
 pulumi.runtime.setMocks({
-  newResource: function(args: pulumi.runtime.MockResourceArgs): {id: string, state: any} {
+  newResource: function (args: pulumi.runtime.MockResourceArgs): {
+    id: string;
+    state: any;
+  } {
     return {
       id: args.inputs.name + "_id",
       state: args.inputs,
     };
   },
-  call: function(args: pulumi.runtime.MockCallArgs) {
+  call: function (args: pulumi.runtime.MockCallArgs) {
     return args.inputs;
   },
 });
@@ -22,7 +25,7 @@ describe("IAM Roles and Policies", () => {
     const ec2Actions = [
       "ec2:RunInstances",
       "ec2:TerminateInstances",
-      "ec2:DescribeInstances"
+      "ec2:DescribeInstances",
     ];
     expect(ec2Actions).toContain("ec2:RunInstances");
   });
@@ -31,7 +34,7 @@ describe("IAM Roles and Policies", () => {
     const dynamodbActions = [
       "dynamodb:GetItem",
       "dynamodb:PutItem",
-      "dynamodb:UpdateItem"
+      "dynamodb:UpdateItem",
     ];
     expect(dynamodbActions).toHaveLength(3);
   });
@@ -47,10 +50,7 @@ describe("IAM Roles and Policies", () => {
   });
 
   it("Master role should have ECR pull permissions", () => {
-    const ecrActions = [
-      "ecr:GetAuthorizationToken",
-      "ecr:BatchGetImage"
-    ];
+    const ecrActions = ["ecr:GetAuthorizationToken", "ecr:BatchGetImage"];
     expect(ecrActions).toHaveLength(2);
   });
 
