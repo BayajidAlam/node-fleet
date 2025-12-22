@@ -47,6 +47,9 @@ secrets/
 *~
 .DS_Store
 
+# GitHub Copilot (personal AI assistant instructions)
+.github/copilot-instructions.md
+
 # Logs
 *.log
 logs/
