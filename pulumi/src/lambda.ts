@@ -4,7 +4,6 @@ import { lambdaRole } from "./iam";
 import { lambdaSg } from "./security-groups";
 import { privateSubnet1, privateSubnet2 } from "./vpc";
 import { stateTable } from "./dynamodb";
-import { k3sSecret, slackSecret } from "./secrets";
 import { slackTopic } from "./sns";
 import { masterPrivateIp } from "./ec2-master";
 import { workerLaunchTemplate, workerSpotTemplate } from "./ec2-worker";
@@ -51,6 +50,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   tags: {
     Name: `${clusterName}-autoscaler`,
     Project: "node-fleet",
+    LastUpdated: "2026-01-15T19:02:00",
   },
 });
 
