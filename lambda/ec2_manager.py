@@ -9,6 +9,7 @@ import subprocess
 import os
 import time
 from typing import Dict, List
+from collections import defaultdict
 from botocore.exceptions import ClientError
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -257,82 +258,79 @@ class EC2Manager:
     def _select_instances_for_termination(self, instances: List[Dict], count: int) -> List[Dict]:
         """
         Select instances for termination with pod-aware selection
-        Priority: spot instances > nodes with fewer pods
+        Priority: 
+        1. Spot instances without StatefulSets (sorted by pod count)
+        2. On-demand instances without StatefulSets (sorted by pod count)
+        3. Spot instances with StatefulSets (fallback)
+        4. On-demand instances with StatefulSets (fallback)
         """
-        logger.info("Selecting instances for termination using pod-aware strategy")
+        logger.info("Selecting instances for termination using enhanced pod-aware strategy")
         
-        # Separate spot and on-demand
-        spot_instances = [i for i in instances if i.get('InstanceLifecycle') == 'spot']
-        ondemand_instances = [i for i in instances if i.get('InstanceLifecycle') != 'spot']
+        # Get pod info for all nodes
+        node_info = self._get_node_pod_info()
+        logger.info(f"Node pod distribution: {node_info}")
         
-        # Get pod counts for all nodes
-        instance_pod_counts = self._get_pod_counts_per_node()
-        logger.info(f"Pod distribution across nodes: {instance_pod_counts}")
-        
-        # Sort spot instances by pod count (ascending - prefer nodes with fewer pods)
-        spot_instances_sorted = sorted(
-            spot_instances,
-            key=lambda i: instance_pod_counts.get(self._get_node_name_from_instance(i['InstanceId']), 0)
-        )
-        
-        # Sort on-demand instances by pod count (ascending)
-        ondemand_instances_sorted = sorted(
-            ondemand_instances,
-            key=lambda i: instance_pod_counts.get(self._get_node_name_from_instance(i['InstanceId']), 0)
-        )
-        
-        selected = []
-        
-        # Prefer removing spot instances first (with fewest pods)
-        selected.extend(spot_instances_sorted[:count])
-        remaining = count - len(selected)
-        
-        # Fill remaining from on-demand (with fewest pods)
-        if remaining > 0:
-            selected.extend(ondemand_instances_sorted[:remaining])
-        
-        # Log selection rationale
-        for instance in selected[:count]:
+        def get_sort_key(instance):
             node_name = self._get_node_name_from_instance(instance['InstanceId'])
-            pod_count = instance_pod_counts.get(node_name, 0)
-            instance_type = "spot" if instance.get('InstanceLifecycle') == 'spot' else "on-demand"
-            logger.info(f"Selected {instance['InstanceId']} ({instance_type}, {pod_count} pods) for termination")
+            info = node_info.get(node_name, {'count': 0, 'has_sts': False})
+            
+            # Weighted sort key:
+            # Lifecycle: Spot (0) preferred over On-demand (100)
+            # StatefulSet: No STS (0) preferred over Has STS (1000)
+            # Pod Count: Fewer pods (1-99) preferred
+            lifecycle_weight = 0 if instance.get('InstanceLifecycle') == 'spot' else 100
+            sts_weight = 1000 if info['has_sts'] else 0
+            pod_weight = info['count']
+            
+            return sts_weight + lifecycle_weight + pod_weight
+
+        instances_sorted = sorted(instances, key=get_sort_key)
+        selected = instances_sorted[:count]
         
-        return selected[:count]
-    
-    def _get_pod_counts_per_node(self) -> Dict[str, int]:
+        for instance in selected:
+            node_name = self._get_node_name_from_instance(instance['InstanceId'])
+            info = node_info.get(node_name, {'count': 0, 'has_sts': False})
+            logger.info(f"Selected {instance['InstanceId']} (Pods: {info['count']}, HasSTS: {info['has_sts']})")
+            
+        return selected
+
+    def _get_node_pod_info(self) -> Dict[str, Dict]:
         """
-        Get pod count for each node in the cluster
+        Get pod count and StatefulSet presence per node
         
         Returns:
-            Dictionary mapping node name to pod count (excluding system pods)
+            Dict mapping node name to {'count': int, 'has_sts': bool}
         """
         try:
             config.load_incluster_config()
             v1 = client.CoreV1Api()
             
-            pod_counts = {}
-            
-            # Get all pods
+            node_info = defaultdict(lambda: {'count': 0, 'has_sts': False})
             pods = v1.list_pod_for_all_namespaces()
             
             for pod in pods.items:
-                # Skip pods in kube-system namespace (they're infrastructure)
                 if pod.metadata.namespace == 'kube-system':
                     continue
-                
-                # Skip completed/failed pods
                 if pod.status.phase in ['Succeeded', 'Failed']:
                     continue
                 
                 node_name = pod.spec.node_name
-                if node_name:
-                    pod_counts[node_name] = pod_counts.get(node_name, 0) + 1
+                if not node_name:
+                    continue
+                    
+                node_info[node_name]['count'] += 1
+                
+                # Check for StatefulSet ownership
+                if pod.metadata.owner_references:
+                    for owner in pod.metadata.owner_references:
+                        if owner.kind == "StatefulSet":
+                            node_info[node_name]['has_sts'] = True
+                            break
             
-            return pod_counts
+            return node_info
             
         except Exception as e:
-            logger.error(f"Error getting pod counts per node: {e}")
+            logger.error(f"Error getting node pod info: {e}")
             return {}
     
     
@@ -547,6 +545,33 @@ class EC2Manager:
                         logger.warning(f"PodDisruptionBudget prevents eviction of {pod.metadata.name}")
                     else:
                         logger.error(f"Failed to evict pod {pod.metadata.name}: {e}")
+            
+            # Step 5: Wait for pods to be fully removed (up to timeout)
+            logger.info(f"Waiting for node {node_name} to be empty (timeout: {timeout}s)")
+            start_poll_time = time.time()
+            while (time.time() - start_poll_time) < timeout:
+                remaining_pods = v1.list_pod_for_all_namespaces(field_selector=field_selector)
+                
+                # Check for remaining pods (ignoring daemonsets and static pods)
+                count = 0
+                for p in remaining_pods.items:
+                    is_infra = False
+                    if p.metadata.owner_references:
+                        for owner in p.metadata.owner_references:
+                            if owner.kind == "DaemonSet":
+                                is_infra = True; break
+                    if not is_infra and not (p.metadata.annotations and 'kubernetes.io/config.mirror' in p.metadata.annotations):
+                        count += 1
+                
+                if count == 0:
+                    logger.info(f"Node {node_name} successfully drained of all pods")
+                    return True
+                    
+                logger.info(f"Waiting for {count} pods to finish evicting from {node_name}...")
+                time.sleep(10)
+            
+            logger.warning(f"Drain timeout reached for {node_name} after {timeout}s. Proceeding anyway.")
+            return True
             
             logger.info(f"Successfully drained node {node_name}")
             return True

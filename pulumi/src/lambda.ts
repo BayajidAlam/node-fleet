@@ -89,7 +89,7 @@ export const lambdaPermission = new aws.lambda.Permission(
 
 // CloudWatch Log Group for Lambda (7 day retention)
 export const lambdaLogGroup = new aws.cloudwatch.LogGroup("autoscaler-logs", {
-  name: `/aws/lambda/${autoscalerLambda.name}`,
+  name: pulumi.interpolate`/aws/lambda/${autoscalerLambda.name}`,
   retentionInDays: 7,
   tags: {
     Project: "node-fleet",
@@ -118,21 +118,23 @@ new aws.iam.RolePolicyAttachment("scheduler-basic-execution", {
 
 new aws.iam.RolePolicy("scheduler-eventbridge-policy", {
   role: schedulerRole.name,
-  policy: JSON.stringify({
-    Version: "2012-10-17",
-    Statement: [
-      {
-        Effect: "Allow",
-        Action: ["events:PutRule", "events:DescribeRule"],
-        Resource: autoscalerSchedule.arn,
-      },
-      {
-        Effect: "Allow",
-        Action: ["cloudwatch:GetMetricStatistics"],
-        Resource: "*",
-      },
-    ],
-  }),
+  policy: pulumi.all([autoscalerSchedule.arn]).apply(([scheduleArn]) =>
+    JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: ["events:PutRule", "events:DescribeRule"],
+          Resource: scheduleArn,
+        },
+        {
+          Effect: "Allow",
+          Action: ["cloudwatch:GetMetricStatistics"],
+          Resource: "*",
+        },
+      ],
+    })
+  ),
 });
 
 export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {

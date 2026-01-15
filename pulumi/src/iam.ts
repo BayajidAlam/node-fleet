@@ -164,6 +164,11 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
       },
       {
         Effect: "Allow",
+        Action: ["cloudwatch:PutMetricData"],
+        Resource: "*",
+      },
+      {
+        Effect: "Allow",
         Action: [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",

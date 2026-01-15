@@ -30,13 +30,13 @@ K3S_TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
 aws secretsmanager update-secret \
   --secret-id node-fleet/k3s-token \
   --secret-string "$K3S_TOKEN" \
-  --region ap-south-1
+  --region ap-southeast-1
 
 # Setup Prometheus basic auth
 echo "🔒 Setting up Prometheus basic authentication..."
 PROM_CREDS=$(aws secretsmanager get-secret-value \
   --secret-id node-fleet/prometheus-auth \
-  --region ap-south-1 \
+  --region ap-southeast-1 \
   --query SecretString --output text)
 
 PROM_USER=$(echo $PROM_CREDS | jq -r '.username')

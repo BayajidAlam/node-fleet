@@ -1,0 +1,1 @@
+{"statusCode": 200, "body": "No scaling needed. Metrics: {'cpu_usage': 11.25614035087721, 'memory_usage': 30.545552653950516, 'pending_pods': 0.0, 'node_count': 0.0, 'network_receive_mbps': 0.0032477094416032757, 'network_transmit_mbps': 0.00417066540634423, 'disk_read_mbps': 0.0, 'disk_write_mbps': 0.05550986842105263}"}

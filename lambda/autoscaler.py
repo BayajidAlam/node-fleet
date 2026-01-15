@@ -68,18 +68,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         try:
-            # Get current cluster state
+            # Get current cluster state (includes metrics_history)
             current_state = state_manager.get_state()
             current_nodes = current_state.get("node_count", MIN_NODES)
+            history = current_state.get("metrics_history", [])
             
-            # Store current metrics for predictive analysis
+            # Step 2.5: Update metrics history with current reading
+            logger.info("Updating metrics history in state")
+            state_manager.update_metrics_history(metrics)
+
+            # Store current metrics for predictive analysis (separate from reactive history)
             if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE:
                 logger.info("Storing metrics for predictive analysis")
                 predictor = PredictiveScaler(METRICS_HISTORY_TABLE)
                 predictor.store_metrics(
                     timestamp=datetime.utcnow(),
-                    cpu_percent=metrics.get('cpu_percent', 0),
-                    memory_percent=metrics.get('memory_percent', 0),
+                    cpu_percent=metrics.get('cpu_usage', 0),
+                    memory_percent=metrics.get('memory_usage', 0),
                     pending_pods=metrics.get('pending_pods', 0),
                     node_count=current_nodes
                 )
@@ -107,8 +112,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 except Exception as e:
                     logger.warning(f"Failed to collect custom metrics: {e}")
             
-            # Reactive scaling decision (includes custom metrics)
-            action = decision_engine.evaluate(metrics, custom_metrics=custom_metrics_eval)
+            # Reactive scaling decision (includes history for sustained load check)
+            action = decision_engine.evaluate(metrics, history=history, custom_metrics=custom_metrics_eval)
             logger.info(f"Reactive scaling decision: {action}")
             
             # Predictive scaling check (if enabled and no immediate action needed)

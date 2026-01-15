@@ -105,9 +105,74 @@ export const publicSubnet2Association = new aws.ec2.RouteTableAssociation(
   }
 );
 
+// Elastic IP for NAT Gateway
+export const natEip = new aws.ec2.Eip("nat-eip", {
+  vpc: true,
+  tags: {
+    Name: `${clusterName}-nat-eip`,
+    Project: "node-fleet",
+  },
+});
+
+// NAT Gateway in Public Subnet 1
+export const natGateway = new aws.ec2.NatGateway("nat-gateway", {
+  allocationId: natEip.id,
+  subnetId: publicSubnet1.id,
+  tags: {
+    Name: `${clusterName}-nat-gw`,
+    Project: "node-fleet",
+  },
+}, { dependsOn: [igw] }); // Ensure IGW exists first
+
+// Private Route Table
+export const privateRouteTable = new aws.ec2.RouteTable("private-rt", {
+  vpcId: vpc.id,
+  routes: [
+    {
+      cidrBlock: "0.0.0.0/0",
+      natGatewayId: natGateway.id,
+    },
+  ],
+  tags: {
+    Name: `${clusterName}-private-rt`,
+    Project: "node-fleet",
+  },
+});
+
+// Associate private subnets with private route table
+export const privateSubnet1Association = new aws.ec2.RouteTableAssociation(
+  "private-subnet-1-assoc",
+  {
+    subnetId: privateSubnet1.id,
+    routeTableId: privateRouteTable.id,
+  }
+);
+
+export const privateSubnet2Association = new aws.ec2.RouteTableAssociation(
+  "private-subnet-2-assoc",
+  {
+    subnetId: privateSubnet2.id,
+    routeTableId: privateRouteTable.id,
+  }
+);
+
+// DynamoDB VPC Endpoint (Gateway)
+export const dynamodbEndpoint = new aws.ec2.VpcEndpoint("dynamodb-endpoint", {
+  vpcId: vpc.id,
+  serviceName: `com.amazonaws.ap-southeast-1.dynamodb`,
+  vpcEndpointType: "Gateway",
+  routeTableIds: [privateRouteTable.id],
+  tags: {
+    Name: `${clusterName}-dynamodb-endpoint`,
+    Project: "node-fleet",
+  },
+});
+
 // Export subnet AZs for Multi-AZ logic
 export const workerSubnets = [publicSubnet1.id, publicSubnet2.id];
 export const workerAZs = [
   publicSubnet1.availabilityZone,
   publicSubnet2.availabilityZone,
+  privateSubnet1.availabilityZone,
+  privateSubnet2.availabilityZone,
 ];

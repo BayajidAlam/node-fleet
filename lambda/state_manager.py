@@ -99,7 +99,12 @@ class StateManager:
             response = self.table.get_item(Key={'cluster_id': self.cluster_id})
             
             if 'Item' in response:
-                return response['Item']
+                state = response['Item']
+                # Ensure metrics_history exists
+                if 'metrics_history' not in state:
+                    state['metrics_history'] = []
+                # Convert Decimals back to floats/ints
+                return state
             else:
                 # Return default state if item doesn't exist
                 logger.info(f"No state found for {self.cluster_id}, returning defaults")
@@ -107,7 +112,8 @@ class StateManager:
                     'cluster_id': self.cluster_id,
                     'node_count': 2,
                     'last_scale_time': 0,
-                    'scaling_in_progress': False
+                    'scaling_in_progress': False,
+                    'metrics_history': []
                 }
                 
         except ClientError as e:
@@ -130,3 +136,52 @@ class StateManager:
         except ClientError as e:
             logger.error(f"Error updating state: {str(e)}")
             raise
+
+    def update_metrics_history(self, current_metrics: Dict, max_history: int = 10):
+        """
+        Update metrics history in DynamoDB (sliding window)
+        
+        Args:
+            current_metrics: Current cluster metrics
+            max_history: Max number of history items to keep
+        """
+        try:
+            # Prepare metric snapshot with timestamp
+            from decimal import Decimal
+            snapshot = {
+                'timestamp': int(time.time()),
+                'cpu_usage': Decimal(str(current_metrics.get('cpu_usage', 0))),
+                'memory_usage': Decimal(str(current_metrics.get('memory_usage', 0))),
+                'pending_pods': int(current_metrics.get('pending_pods', 0))
+            }
+            
+            # Use list_append and if_not_exists for atomic update
+            # Note: Removal of old items is done after append to maintain window size
+            self.table.update_item(
+                Key={'cluster_id': self.cluster_id},
+                UpdateExpression='SET metrics_history = list_append(if_not_exists(metrics_history, :empty_list), :new_metric)',
+                ExpressionAttributeValues={
+                    ':new_metric': [snapshot],
+                    ':empty_list': []
+                }
+            )
+            
+            # Trim history if it exceeds max_history
+            state = self.get_state()
+            history = state.get('metrics_history', [])
+            if len(history) > max_history:
+                # Remove oldest items (DynamoDB doesn't have a direct "trim" so we update the whole list)
+                trimmed_history = history[-max_history:]
+                self.table.update_item(
+                    Key={'cluster_id': self.cluster_id},
+                    UpdateExpression='SET metrics_history = :trimmed',
+                    ExpressionAttributeValues={
+                        ':trimmed': trimmed_history
+                    }
+                )
+                
+            logger.info("Metrics history updated in DynamoDB")
+            
+        except ClientError as e:
+            logger.error(f"Error updating metrics history: {str(e)}")
+            # Don't raise - metric history failure shouldn't kill the autoscaler

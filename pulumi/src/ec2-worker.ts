@@ -42,8 +42,8 @@ export const workerLaunchTemplate = new aws.ec2.LaunchTemplate(
         ebs: {
           volumeSize: 20,
           volumeType: "gp3",
-          encrypted: true,
-          deleteOnTermination: true,
+          encrypted: "true",
+          deleteOnTermination: "true",
         },
       },
     ],
@@ -89,8 +89,8 @@ export const workerSpotTemplate = new aws.ec2.LaunchTemplate(
         ebs: {
           volumeSize: 20,
           volumeType: "gp3",
-          encrypted: true,
-          deleteOnTermination: true,
+          encrypted: "true",
+          deleteOnTermination: "true",
         },
       },
     ],
