@@ -648,35 +648,6 @@ aws lambda update-function-configuration \
 aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow --filter-pattern "ERROR"
 ```
 
----
-
-## 🚧 Roadmap
-
-### Completed ✅
-
-- [x] Core autoscaling logic
-- [x] Multi-AZ distribution
-- [x] Spot instance integration
-- [x] Predictive scaling
-- [x] Custom application metrics
-- [x] GitOps with FluxCD
-- [x] Real-time cost dashboard
-
-### Planned 🗓️
-
-- [ ] **Q1 2026**: Support for multiple K3s clusters from single Lambda
-- [ ] **Q2 2026**: Machine learning-based anomaly detection
-- [ ] **Q3 2026**: Blue/green deployment automation
-- [ ] **Q4 2026**: Kubernetes HPA integration (pod-level autoscaling)
-
-### Future Enhancements 💡
-
-- Multi-cloud support (Azure AKS, GCP GKE)
-- ARM64 Graviton instance support (20% cost savings)
-- Prometheus long-term storage with Thanos
-- Custom scaling algorithms via Lambda Layers
-
----
 
 ## 👥 Contributing
 
@@ -705,28 +676,11 @@ black lambda/
 flake8 lambda/
 ```
 
----
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **K3s Team** for the lightweight Kubernetes distribution
-- **Rancher Labs** for excellent K3s documentation
-- **AWS** for comprehensive SDK and service documentation
-- **Prometheus Community** for robust monitoring tools
-- **Pulumi** for modern Infrastructure as Code platform
-
----
 
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/BayajidAlam/node-fleet/issues)
-- **Email**: bayajidalam@example.com
+- **Email**: bayajidalam2001@gmail.com
 - **Documentation**: [Full Docs](docs/)
 
 ---
