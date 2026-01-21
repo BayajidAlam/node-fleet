@@ -33,8 +33,10 @@ def calculate_spot_ondemand_mix(current_nodes: int, desired_nodes: int, existing
     target_spot_ratio = 0.70
     
     # Calculate ideal total counts
-    ideal_total_spot = int(desired_nodes * target_spot_ratio)
-    ideal_total_ondemand = desired_nodes - ideal_total_spot
+    # Ensure desired_nodes is int (boto3 DynamoDB returns Decimal)
+    desired_nodes_int = int(desired_nodes)
+    ideal_total_spot = int(desired_nodes_int * target_spot_ratio)
+    ideal_total_ondemand = desired_nodes_int - ideal_total_spot
     
     # Calculate how many more of each type we need
     spot_to_add = max(0, ideal_total_spot - existing_spot_count)

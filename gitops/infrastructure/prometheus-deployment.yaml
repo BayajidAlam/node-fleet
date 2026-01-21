@@ -16,7 +16,7 @@ metadata:
 type: Opaque
 stringData:
   auth: |
-    admin:$2y$12$hNf2lSsxfm0.i4a.1kVpSOVyBCfIB51VRjgBUyv6kdnyTlgWj81Ay
+    admin:$2b$10$6rh/85.e06iFC6kAhDagru8Kc1rH3sYnq1miSijL0oHwQQk.fbgMS
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -69,7 +69,7 @@ data:
           - targets: ['demo-app.default.svc.cluster.local:5000']
   web.yml: |
     basic_auth_users:
-      admin: $2y$12$hNf2lSsxfm0.i4a.1kVpSOVyBCfIB51VRjgBUyv6kdnyTlgWj81Ay
+      admin: $2b$10$6rh/85.e06iFC6kAhDagru8Kc1rH3sYnq1miSijL0oHwQQk.fbgMS
 ---
 apiVersion: apps/v1
 kind: Deployment

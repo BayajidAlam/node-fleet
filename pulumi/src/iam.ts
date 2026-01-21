@@ -120,7 +120,7 @@ export const lambdaRole = new aws.iam.Role("lambda-role", {
 // Lambda role policies
 export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
   role: lambdaRole.id,
-  policy: JSON.stringify({
+  policy: pulumi.all([workerRole.arn]).apply(([workerArn]) => JSON.stringify({
     Version: "2012-10-17",
     Statement: [
       {
@@ -176,8 +176,18 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
         ],
         Resource: "*",
       },
+      {
+        Effect: "Allow",
+        Action: "iam:PassRole",
+        Resource: workerArn,
+      },
+      {
+        Effect: "Allow",
+        Action: "iam:CreateServiceLinkedRole",
+        Resource: "*",
+      },
     ],
-  }),
+  })),
 });
 
 // Attach AWS managed policies

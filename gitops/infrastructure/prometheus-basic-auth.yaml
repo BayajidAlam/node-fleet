@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prometheus-basic-auth
+  namespace: monitoring
+type: Opaque
+stringData:
+  auth: "admin:$2b$10$6rh/85.e06iFC6kAhDagru8Kc1rH3sYnq1miSijL0oHwQQk.fbgMS"

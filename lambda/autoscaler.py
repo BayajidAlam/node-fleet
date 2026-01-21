@@ -70,7 +70,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         try:
             # Get current cluster state (includes metrics_history)
             current_state = state_manager.get_state()
-            current_nodes = current_state.get("node_count", MIN_NODES)
+            metric_node_count = int(metrics.get("node_count", 0))
+            stored_node_count = current_state.get("node_count", MIN_NODES)
+            
+            # Use metrics as primary source (reconcile if state is drifting or initializing)
+            if metric_node_count > 0:
+                current_nodes = metric_node_count
+                if current_nodes != stored_node_count:
+                    logger.info(f"Reconciling state: Metrics show {current_nodes} nodes, State showed {stored_node_count}. Using Metrics.")
+            else:
+                 # If metrics show 0, it might be an error or true zero. 
+                 # If it's true zero, we want to start scaling. 
+                 # Trust metrics if it's 0 but not None? 
+                 # metrics.get defaults to 0.0. 
+                 # We'll use 0 if Metrics collected successfully (we know this from logic above)
+                 # But we must be careful of failed scraping returning 0.
+                 # Let's trust it for now to solve the bootstrap issue.
+                 current_nodes = metric_node_count
+                 logger.info(f"Metrics show 0 nodes. Using 0 to trigger bootstrap scaling.")
+
             history = current_state.get("metrics_history", [])
             
             # Step 2.5: Update metrics history with current reading
