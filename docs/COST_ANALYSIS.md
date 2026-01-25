@@ -176,6 +176,8 @@
 
 ### 1. Spot Instance Mix Optimization
 
+![Cost Optimization Process](diagrams/cost_optimization_cycle.png)
+
 **Current**: 70% Spot, 30% On-Demand
 
 | Spot Mix               | Monthly Worker Cost (BDT) | Savings vs 100% On-Demand |

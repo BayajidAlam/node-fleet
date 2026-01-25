@@ -1,5 +1,7 @@
 # SmartScale K3s Autoscaler - Deployment Guide
 
+![GitOps Deployment Workflow](diagrams/gitops_workflow.png)
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)

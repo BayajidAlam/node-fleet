@@ -1,5 +1,7 @@
 # SmartScale K3s Autoscaler - Detailed Architecture
 
+![System Architecture](diagrams/system_architecture.png)
+
 > **Important: Cluster Topology**
 >
 > - **Fixed**: 1 master node (never scales, runs in single AZ)
@@ -49,148 +51,67 @@ SmartScale is a serverless autoscaling system for K3s clusters on AWS that uses 
 
 ### AWS Infrastructure Components
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           AWS Account                               │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │  VPC (10.0.0.0/16)                                            │ │
-│  │                                                               │ │
-│  │  ┌────────────────────┐         ┌────────────────────┐       │ │
-│  │  │  Public Subnet     │         │  Public Subnet     │       │ │
-│  │  │  (10.0.1.0/24)     │         │  (10.0.2.0/24)     │       │ │
-│  │  │  AZ: ap-se-1a      │         │  AZ: ap-se-1b      │       │ │
-│  │  │  ┌──────────────┐  │         │  ┌──────────────┐  │       │ │
-│  │  │  │ NAT Gateway  │  │         │  │ NAT Gateway  │  │       │ │
-│  │  │  │ (Elastic IP) │  │         │  │ (Elastic IP) │  │       │ │
-│  │  │  └──────────────┘  │         │  └──────────────┘  │       │ │
-│  │  └────────────────────┘         └────────────────────┘       │ │
-│  │                                                               │ │
-│  │  ┌────────────────────┐         ┌────────────────────┐       │ │
-│  │  │  Private Subnet    │         │  Private Subnet    │       │ │
-│  │  │  (10.0.11.0/24)    │         │  (10.0.12.0/24)    │       │ │
-│  │  │  AZ: ap-se-1a      │         │  AZ: ap-se-1b      │       │ │
-│  │  │  ┌──────────────┐  │         │  ┌──────────────┐  │       │ │
-│  │  │  │  K3s Master  │  │         │  │ K3s Workers  │  │       │ │
-│  │  │  │  (t3.medium) │  │         │  │  (t3.small)  │  │       │ │
-│  │  │  │              │  │         │  │              │  │       │ │
-│  │  │  │ Prometheus   │  │         │  │  Auto-scaled │  │       │ │
-│  │  │  │ Grafana      │  │         │  │  (2-10 nodes)│  │       │ │
-│  │  │  │ FluxCD       │  │         │  │              │  │       │ │
-│  │  │  └──────────────┘  │         │  └──────────────┘  │       │ │
-│  │  └────────────────────┘         └────────────────────┘       │ │
-│  │                                                               │ │
-│  │  Security Groups:                                             │ │
-│  │  • sg-master: 6443/tcp (from workers), 30090/tcp (Prom),     │ │
-│  │               30030/tcp (Grafana), 22/tcp (admin)            │ │
-│  │  • sg-worker: 22/tcp (admin), all from master                │ │
-│  │  • sg-lambda: all outbound                                   │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │  Serverless Components                                        │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  Lambda Function: autoscaler                   │          │ │
-│  │  │  • Runtime: Python 3.11                        │          │ │
-│  │  │  • Memory: 256 MB                              │          │ │
-│  │  │  • Timeout: 60 seconds                         │          │ │
-│  │  │  • VPC: Attached to private subnets            │          │ │
-│  │  │  • Trigger: EventBridge (rate: 2 minutes)      │          │ │
-│  │  │  • Modules:                                    │          │ │
-│  │  │    - autoscaler.py (main orchestrator)         │          │ │
-│  │  │    - metrics_collector.py (Prometheus client)  │          │ │
-│  │  │    - scaling_decision.py (decision engine)     │          │ │
-│  │  │    - predictive_scaling.py (historical analysis)│         │ │
-│  │  │    - cost_optimizer.py (weekly recommendations)│          │ │
-│  │  │    - custom_metrics.py (app-level metrics)     │          │ │
-│  │  │    - ec2_manager.py (instance lifecycle)       │          │ │
-│  │  │    - state_manager.py (DynamoDB operations)    │          │ │
-│  │  │    - k3s_helper.py (kubectl drain, wait Ready) │          │ │
-│  │  │    - multi_az_helper.py (AZ load balancing)    │          │ │
-│  │  │    - spot_instance_helper.py (Spot/On-D mix)   │          │ │
-│  │  │    - audit_logger.py (compliance logging)      │          │ │
-│  │  │    - dynamic_scheduler.py (time-aware scaling) │          │ │
-│  │  │    - slack_notifier.py (SNS → Slack)           │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  EventBridge Rule: autoscaler-schedule         │          │ │
-│  │  │  • Schedule: rate(2 minutes)                   │          │ │
-│  │  │  • Target: Lambda function                     │          │ │
-│  │  │  • State: ENABLED                              │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │  Data Stores                                                  │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  DynamoDB Table: node-fleet-dev-state          │          │ │
-│  │  │  • Partition Key: cluster_id (String)          │          │ │
-│  │  │  • Billing: On-Demand                          │          │ │
-│  │  │  • Encryption: AWS-managed KMS                 │          │ │
-│  │  │  • Streams: Enabled (for audit logs)           │          │ │
-│  │  │  • Attributes:                                 │          │ │
-│  │  │    - current_node_count (Number)               │          │ │
-│  │  │    - last_scale_time (String, ISO 8601)        │          │ │
-│  │  │    - last_scale_action (String: up/down/none)  │          │ │
-│  │  │    - scaling_in_progress (Boolean)             │          │ │
-│  │  │    - lock_acquired_at (String, ISO 8601)       │          │ │
-│  │  │    - worker_node_ids (StringSet)               │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  DynamoDB Table: node-fleet-dev-metrics-history│          │ │
-│  │  │  • Partition Key: timestamp (String)           │          │ │
-│  │  │  • TTL: 7 days (predictive scaling)            │          │ │
-│  │  │  • Attributes:                                 │          │ │
-│  │  │    - cpu_utilization (Number)                  │          │ │
-│  │  │    - memory_utilization (Number)               │          │ │
-│  │  │    - node_count (Number)                       │          │ │
-│  │  │    - pending_pods (Number)                     │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │  Secret Management & Notifications                            │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  AWS Secrets Manager                           │          │ │
-│  │  │  • node-fleet/k3s-token                        │          │ │
-│  │  │  • node-fleet/slack-webhook                    │          │ │
-│  │  │  • Encryption: AWS-managed KMS                 │          │ │
-│  │  │  • Rotation: Manual (K3s token stable)         │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  SNS Topic: autoscaler-notifications           │          │ │
-│  │  │  • Subscriber: Slack (via Lambda)              │          │ │
-│  │  │  • Message Format: JSON with event details     │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │  Monitoring & Logging                                         │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  CloudWatch Logs                               │          │ │
-│  │  │  • /aws/lambda/node-fleet-dev-autoscaler       │          │ │
-│  │  │  • Retention: 30 days                          │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  │                                                               │ │
-│  │  ┌────────────────────────────────────────────────┐          │ │
-│  │  │  CloudWatch Metrics (Custom Namespace)         │          │ │
-│  │  │  • Namespace: SmartScale                       │          │ │
-│  │  │  • Metrics:                                    │          │ │
-│  │  │    - AutoscalerInvocations                     │          │ │
-│  │  │    - ClusterCPUUtilization                     │          │ │
-│  │  │    - ClusterMemoryUtilization                  │          │ │
-│  │  │    - PendingPods                               │          │ │
-│  │  │    - CurrentNodeCount                          │          │ │
-│  │  └────────────────────────────────────────────────┘          │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph AWS["AWS Cloud"]
+        subgraph VPC["VPC (10.0.0.0/16)"]
+            style VPC fill:#f8f9fa,stroke:#333,stroke-width:2px,color:#000
+            
+            subgraph Public["Public Subnets (NAT Layer)"]
+                style Public fill:#e3f2fd,stroke:#1565c0,color:#000
+                NAT1["NAT Gateway (AZ-1a)"]
+                NAT2["NAT Gateway (AZ-1b)"]
+            end
+
+            subgraph Private["Private Subnets (Workloads)"]
+                style Private fill:#e8f5e9,stroke:#2e7d32,color:#000
+                Master["K3s Master (t3.medium)<br>• Prometheus<br>• Grafana<br>• FluxCD"]
+                style Master fill:#c8e6c9,stroke:#1b5e20,color:#000
+                
+                subgraph Workers["Worker Fleet (Auto-scaled 2-10)"]
+                    style Workers fill:#fff3e0,stroke:#ef6c00,color:#000
+                    W1["Worker (Spot)"]
+                    W2["Worker (On-Demand)"]
+                end
+            end
+        end
+
+        subgraph Serverless["Control Plane"]
+            style Serverless fill:#f3e5f5,stroke:#7b1fa2,color:#000
+            EB("EventBridge<br>(2 min rate)")
+            Lambda("Lambda Autoscaler<br>(Python 3.11)")
+            style Lambda fill:#e1bee7,stroke:#4a148c,stroke-width:2px,color:#000
+        end
+
+        subgraph Data["State & Config"]
+            style Data fill:#fff9c4,stroke:#fbc02d,color:#000
+            DDB[("DynamoDB<br>State Table")]
+            Secret[("Secrets Manager")]
+        end
+        
+        subgraph Monitoring["Observability"]
+            style Monitoring fill:#ffebee,stroke:#c62828,color:#000
+            CW["CloudWatch"]
+            SNS["SNS Topic"]
+        end
+    end
+    
+    Slack["Slack Alerts"]
+    style Slack fill:#4a154b,stroke:#fff,color:#fff
+
+    %% Data Flow
+    EB -->|Trigger| Lambda
+    Lambda -->|1. Query Metrics| Master
+    Lambda -->|2. Acquire Lock| DDB
+    Lambda -->|3. Get Creds| Secret
+    Lambda -->|4. Launch/Drain| Workers
+    Lambda -->|5. Log Events| CW
+    Lambda -->|6. Notify| SNS
+    SNS -->|Webhook| Slack
+    
+    %% Network Flow
+    Master <-->|API/Metrics| Workers
+    Workers -->|Internet Access| NAT1 & NAT2
 ```
 
 ---
@@ -242,6 +163,8 @@ SmartScale is a serverless autoscaling system for K3s clusters on AWS that uses 
 ## Data Flow Sequences
 
 ### Scale-Up Sequence
+
+![Scale Up Flow](diagrams/scale_up_sequence.png)
 
 ```
 [EventBridge]
@@ -300,6 +223,8 @@ SmartScale is a serverless autoscaling system for K3s clusters on AWS that uses 
 ```
 
 ### Scale-Down Sequence
+
+![Scale Down Flow](diagrams/scale_down_sequence.png)
 
 ```
 [EventBridge]
