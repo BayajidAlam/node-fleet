@@ -5,7 +5,7 @@ Analyzes cluster usage patterns and suggests cost-saving opportunities
 
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import boto3
 
 logger = logging.getLogger()
@@ -60,7 +60,7 @@ class CostOptimizer:
             potential_savings_percent += idle_rec.get('savings_percent', 0)
         
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "cluster_id": self.cluster_id,
             "recommendations": recommendations,
             "potential_savings_percent": min(potential_savings_percent, 60),  # Cap at 60%
@@ -159,7 +159,7 @@ class CostOptimizer:
         """Check for consistent idle periods (e.g., nights/weekends)"""
         # Get hourly CPU data for last 7 days
         try:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             start_time = end_time - timedelta(days=7)
             
             response = cloudwatch.get_metric_statistics(
@@ -209,7 +209,7 @@ class CostOptimizer:
     def _get_average_metric(self, metric_name: str, hours: int = 6) -> Optional[float]:
         """Get average value of a metric over specified hours"""
         try:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             start_time = end_time - timedelta(hours=hours)
             
             response = cloudwatch.get_metric_statistics(

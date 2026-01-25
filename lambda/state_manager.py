@@ -33,7 +33,7 @@ class StateManager:
         """
         try:
             current_time = int(time.time())
-            lock_expiry_time = current_time + 300  # Lock expires after 5 minutes
+            lock_expiry_time = current_time + 120  # Lock expires after 2 minutes
             expired_time = current_time  # Locks older than now are considered expired
             
             # Try to acquire lock with conditional expression
@@ -50,7 +50,7 @@ class StateManager:
                     ':false': False,
                     ':now': current_time,
                     ':expiry': lock_expiry_time,
-                    ':expired': current_time - 300  # Locks older than 5 minutes
+                    ':expired': current_time - 120  # Locks older than 2 minutes
                 }
             )
             logger.info(f"Lock acquired for cluster {self.cluster_id} (expires at {lock_expiry_time})")
@@ -62,7 +62,7 @@ class StateManager:
                 try:
                     state = self.get_state()
                     lock_age = current_time - state.get('lock_acquired_at', current_time)
-                    if lock_age > 300:
+                    if lock_age > 120:
                         logger.warning(f"Stale lock detected (age: {lock_age}s), forcing release")
                         self.release_lock()
                         return self.acquire_lock(timeout)  # Retry once

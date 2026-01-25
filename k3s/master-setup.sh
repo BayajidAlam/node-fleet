@@ -6,7 +6,7 @@ echo "🚀 Setting up K3s Master Node..."
 # Update system
 echo "📦 Updating system packages..."
 sudo apt-get update -qq
-sudo apt-get install -y curl wget jq
+sudo apt-get install -y curl wget jq awscli
 
 # Install K3s server (master)
 echo "🎯 Installing K3s server..."
@@ -211,6 +211,66 @@ spec:
     - port: 3000
       targetPort: 3000
       nodePort: 3000
+EOF
+
+# Install Ingress Nginx (Required for Application Metrics)
+echo "🌐 Installing Ingress Nginx..."
+sudo k3s kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+
+# Fix Kube State Metrics RBAC (Required for Node Counts)
+echo "🔧 Fixing Kube State Metrics RBAC..."
+cat <<EOF | sudo k3s kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-state-metrics
+rules:
+- apiGroups: ["", "extensions", "apps", "networking.k8s.io", "storage.k8s.io", "autoscaling", "policy", "batch", "coordination.k8s.io", "admissionregistration.k8s.io", "certificates.k8s.io"]
+  resources: ["*"]
+  verbs: ["list", "watch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-state-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-state-metrics
+subjects:
+- kind: ServiceAccount
+  name: kube-state-metrics
+  namespace: monitoring
+EOF
+
+# Setup Grafana Datasources (Auth Fix + CloudWatch Region)
+echo "🔌 Configuring Grafana Datasources..."
+# URL Encode password for URL-embedded Auth
+PROM_PASS_ENC=$(echo -n "$PROM_PASS" | jq -sRr @uri)
+
+cat <<EOF | sudo k3s kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      # Use URL Auth to bypass Grafana provisioner escaping issues
+      url: http://${PROM_USER}:${PROM_PASS_ENC}@prometheus:9090
+      basicAuth: false
+      isDefault: true
+    - name: CloudWatch
+      type: cloudwatch
+      access: proxy
+      jsonData:
+        authType: default
+        defaultRegion: ap-southeast-1
 EOF
 
 # Wait for Prometheus and Grafana to be ready

@@ -1,1 +1,1 @@
-{"statusCode": 200, "body": "No scaling needed. Metrics: {'cpu_usage': 6.80596727642013, 'memory_usage': 31.08850913496536, 'pending_pods': 0.0, 'node_count': 0.0, 'network_receive_mbps': 0.004491667430578749, 'network_transmit_mbps': 0.005487099004107524, 'disk_read_mbps': 0.0, 'disk_write_mbps': 0.0782752182440825}"}
+{"statusCode": 200, "body": "Skipped: Scaling already in progress"}

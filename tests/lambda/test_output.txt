@@ -1,0 +1,35 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/bayajidswe/My-files/poridhi-project/node-fleet/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/bayajidswe/My-files/poridhi-project/node-fleet/tests/lambda
+configfile: pytest.ini
+testpaths: .
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 78 items
+
+test_autoscaler_integration.py::test_lambda_handler_scale_up FAILED      [  1%]
+test_autoscaler_integration.py::test_lambda_handler_no_scaling_needed PASSED [  2%]
+test_autoscaler_integration.py::test_lambda_handler_lock_held PASSED     [  3%]
+test_autoscaler_integration.py::test_lambda_handler_error_handling PASSED [  5%]
+test_custom_metrics.py::test_custom_metrics_collector_init FAILED        [  6%]
+test_custom_metrics.py::test_get_queue_depth ERROR                       [  7%]
+test_custom_metrics.py::test_get_queue_depth_no_data ERROR               [  8%]
+test_custom_metrics.py::test_get_api_latency_p95 ERROR                   [ 10%]
+test_custom_metrics.py::test_get_api_latency_no_data ERROR               [ 11%]
+test_custom_metrics.py::test_get_request_rate ERROR                      [ 12%]
+test_custom_metrics.py::test_get_error_rate ERROR                        [ 14%]
+test_custom_metrics.py::test_get_error_rate_no_errors ERROR              [ 15%]
+test_custom_metrics.py::test_get_active_connections ERROR                [ 16%]
+test_custom_metrics.py::test_get_custom_metric ERROR                     [ 17%]
+test_custom_metrics.py::test_evaluate_scaling_need_queue_depth ERROR     [ 19%]
+test_custom_metrics.py::test_evaluate_scaling_need_latency ERROR         [ 20%]
+test_custom_metrics.py::test_evaluate_scaling_need_error_rate ERROR      [ 21%]
+test_custom_metrics.py::test_evaluate_scaling_need_connections ERROR     [ 23%]
+test_custom_metrics.py::test_evaluate_scaling_need_no_scale ERROR        [ 24%]
+test_custom_metrics.py::test_evaluate_scaling_need_multiple_triggers ERROR [ 25%]
+test_custom_metrics.py::test_get_custom_metrics_convenience_function ERROR [ 26%]
+test_custom_metrics.py::test_prometheus_error_handling ERROR             [ 28%]
+test_ec2_manager.py::test_scale_up_on_demand_only FAILED                 [ 29%]
+test_ec2_manager.py::test_scale_up_mixed_instances FAILED                [ 30%]
+test_ec2_manager.py::test_scale_down_success FAILED                      [ 32%]
+test_ec2_manager.py::test_scale_down_prefers_spot 

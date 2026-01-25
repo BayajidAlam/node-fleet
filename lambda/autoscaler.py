@@ -11,7 +11,7 @@ Orchestrates the 5-step scaling workflow with predictive scaling:
 import os
 import logging
 import boto3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from metrics_collector import collect_metrics
 from state_manager import StateManager
@@ -32,17 +32,37 @@ cloudwatch = boto3.client('cloudwatch')
 # Environment variables
 CLUSTER_ID = os.environ.get("CLUSTER_ID", "node-fleet-cluster")
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL")
-PROMETHEUS_USERNAME = os.environ.get("PROMETHEUS_USERNAME", "admin")
-PROMETHEUS_PASSWORD = os.environ.get("PROMETHEUS_PASSWORD", "prompassword")
 STATE_TABLE = os.environ.get("STATE_TABLE")
 METRICS_HISTORY_TABLE = os.environ.get("METRICS_HISTORY_TABLE")
-MIN_NODES = int(os.environ.get("MIN_NODES", "2"))
-MAX_NODES = int(os.environ.get("MAX_NODES", "10"))
+MIN_NODES = int(os.environ.get("MIN_NODES", "2"))  # Minimum WORKER nodes (excludes master)
+MAX_NODES = int(os.environ.get("MAX_NODES", "10"))  # Maximum WORKER nodes (excludes master)
 WORKER_LAUNCH_TEMPLATE_ID = os.environ.get("WORKER_LAUNCH_TEMPLATE_ID")
 WORKER_SPOT_TEMPLATE_ID = os.environ.get("WORKER_SPOT_TEMPLATE_ID")
 SPOT_PERCENTAGE = int(os.environ.get("SPOT_PERCENTAGE", "70"))
 ENABLE_PREDICTIVE_SCALING = os.environ.get("ENABLE_PREDICTIVE_SCALING", "true").lower() == "true"
 ENABLE_CUSTOM_METRICS = os.environ.get("ENABLE_CUSTOM_METRICS", "false").lower() == "true"
+
+def get_prometheus_credentials():
+    """Get Prometheus credentials from Secrets Manager or Env Vars"""
+    username = os.environ.get("PROMETHEUS_USERNAME", "admin")
+    password = os.environ.get("PROMETHEUS_PASSWORD", "prompassword")
+    
+    # If using defaults, try fetching from Secrets Manager
+    if password == "prompassword":
+        try:
+            import json
+            client = boto3.client('secretsmanager')
+            secret_name = "node-fleet/prometheus-auth"
+            response = client.get_secret_value(SecretId=secret_name)
+            if 'SecretString' in response:
+                creds = json.loads(response['SecretString'])
+                username = creds.get('username', username)
+                password = creds.get('password', password)
+                logger.info("Loaded Prometheus credentials from Secrets Manager")
+        except Exception as e:
+            logger.warning(f"Failed to load Prometheus secrets: {e}")
+            
+    return username, password
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -50,10 +70,58 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     logger.info(f"Autoscaler triggered for cluster: {CLUSTER_ID}")
     
+    # Handle Spot Instance Interruption
+    if event.get("detail-type") == "EC2 Spot Instance Interruption Warning":
+        logger.warning(f"RECEIVED SPOT INTERRUPT WARNING: {event}")
+        try:
+            instance_id = event.get("detail", {}).get("instance-id")
+            if not instance_id:
+                logger.error("Spot event missing instance-id")
+                return {"statusCode": 400, "body": "Missing instance-id"}
+                
+            logger.info(f"Handling interruption for {instance_id}")
+            
+            ec2_manager = EC2Manager(
+                worker_template_id=WORKER_LAUNCH_TEMPLATE_ID,
+                worker_spot_template_id=WORKER_SPOT_TEMPLATE_ID,
+                spot_percentage=SPOT_PERCENTAGE
+            )
+            
+            result = ec2_manager.handle_spot_interruption_event(instance_id)
+            
+            # Notify Slack
+            emoji = "⚠️" if result.get("success") else "❌"
+            msg = f"{emoji} **Spot Interruption Warning**\n"
+            msg += f"*Instance:* {instance_id}\n"
+            msg += f"*Action:* {result.get('action', 'failed')}\n"
+            if result.get("node"):
+                msg += f"*Node:* {result['node']}\n"
+            if result.get("reason"):
+                msg += f"*Reason:* {result['reason']}"
+                
+            send_notification(msg)
+            
+            return {
+                "statusCode": 200, 
+                "body": f"Spot handled: {result}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error handling spot event: {e}")
+            send_notification(f"❌ Failed to handle spot interruption for {event}: {e}")
+            raise e
+
     try:
         # Step 1: Collect Prometheus metrics
         logger.info("Step 1: Collecting metrics from Prometheus")
-        metrics = collect_metrics(PROMETHEUS_URL, PROMETHEUS_USERNAME, PROMETHEUS_PASSWORD)
+        
+        # Get credentials (handles dynamic secret fetching)
+        prom_user, prom_pass = get_prometheus_credentials()
+        
+        metrics = collect_metrics(PROMETHEUS_URL, prom_user, prom_pass)
+        
+
+        
         logger.info(f"Metrics collected: {metrics}")
         
         # Step 2: Acquire DynamoDB lock
@@ -100,7 +168,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info("Storing metrics for predictive analysis")
                 predictor = PredictiveScaler(METRICS_HISTORY_TABLE)
                 predictor.store_metrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_percent=metrics.get('cpu_usage', 0),
                     memory_percent=metrics.get('memory_usage', 0),
                     pending_pods=metrics.get('pending_pods', 0),
@@ -109,11 +177,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Step 3: Decide scaling action (reactive + predictive + custom metrics)
             logger.info(f"Step 3: Evaluating scaling decision (current nodes: {current_nodes})")
+            
             decision_engine = ScalingDecision(
                 min_nodes=MIN_NODES,
                 max_nodes=MAX_NODES,
                 current_nodes=current_nodes,
-                last_scale_time=current_state.get("last_scale_time", 0)
+                last_scale_time=current_state.get('last_scale_time', 0)
             )
             
             # Collect custom application metrics if enabled
@@ -134,8 +203,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             action = decision_engine.evaluate(metrics, history=history, custom_metrics=custom_metrics_eval)
             logger.info(f"Reactive scaling decision: {action}")
             
-            # Predictive scaling check (if enabled and no immediate action needed)
-            if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE and action["action"] == "none":
+            # Predictive scaling check (only if enabled, no immediate action needed, and close to next hour)
+            # "Pre-scale 10 minutes before known high-traffic periods" implies checking ~10 mins before hour change
+            current_minute = datetime.now(timezone.utc).minute
+            if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE and action["action"] == "none" and current_minute >= 50:
                 logger.info("Checking predictive scaling recommendations")
                 predictor = PredictiveScaler(METRICS_HISTORY_TABLE)
                 prediction = predictor.predict_next_hour_load(metrics)
@@ -294,35 +365,35 @@ def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, 
                 'MetricName': 'AutoscalerInvocations',
                 'Value': 1,
                 'Unit': 'Count',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             },
             # Current node count
             {
                 'MetricName': 'CurrentNodeCount',
                 'Value': new_node_count,
                 'Unit': 'Count',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             },
             # Cluster CPU utilization
             {
                 'MetricName': 'ClusterCPUUtilization',
                 'Value': metrics.get('cpu_usage', 0),
                 'Unit': 'Percent',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             },
             # Cluster memory utilization
             {
                 'MetricName': 'ClusterMemoryUtilization',
                 'Value': metrics.get('memory_usage', 0),
                 'Unit': 'Percent',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             },
             # Pending pods count
             {
                 'MetricName': 'PendingPods',
                 'Value': metrics.get('pending_pods', 0),
                 'Unit': 'Count',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             }
         ]
         
@@ -332,14 +403,14 @@ def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, 
                 'MetricName': 'ScaleUpEvents',
                 'Value': 1,
                 'Unit': 'Count',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             })
         elif action == 'scale_down':
             metric_data.append({
                 'MetricName': 'ScaleDownEvents',
                 'Value': 1,
                 'Unit': 'Count',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             })
         
         # Add failure metrics if not successful
@@ -348,7 +419,7 @@ def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, 
                 'MetricName': 'ScalingFailures',
                 'Value': 1,
                 'Unit': 'Count',
-                'Timestamp': datetime.utcnow(),
+                'Timestamp': datetime.now(timezone.utc),
                 'Dimensions': [
                     {
                         'Name': 'ErrorType',
@@ -363,14 +434,14 @@ def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, 
                 'MetricName': 'NodeJoinLatency',
                 'Value': node_join_latency_ms,
                 'Unit': 'Milliseconds',
-                'Timestamp': datetime.utcnow()
+                'Timestamp': datetime.now(timezone.utc)
             })
         
         # Publish metrics in batches (CloudWatch allows max 20 per call)
         for i in range(0, len(metric_data), 20):
             batch = metric_data[i:i+20]
             cloudwatch.put_metric_data(
-                Namespace='NodeFleet/Autoscaler',
+                Namespace='SmartScale',
                 MetricData=batch
             )
         
@@ -385,8 +456,7 @@ def should_generate_cost_report() -> bool:
     Determine if cost optimization report should be generated
     Run once per week on Sundays at noon
     """
-    from datetime import datetime
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Only on Sundays (weekday 6) between 12:00-12:10 UTC
     return now.weekday() == 6 and now.hour == 12 and now.minute < 10

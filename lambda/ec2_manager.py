@@ -8,6 +8,7 @@ import boto3
 import subprocess
 import os
 import time
+import tempfile
 from typing import Dict, List
 from collections import defaultdict
 from botocore.exceptions import ClientError
@@ -35,6 +36,43 @@ class EC2Manager:
         # Multi-AZ: Subnet IDs for ap-south-1a and ap-south-1b
         self.available_subnets = self._get_cluster_subnets()
     
+    def handle_spot_interruption_event(self, instance_id: str) -> Dict:
+        """
+        Handle Spot Instance Interruption Warning event
+        1. Tag instance as interrupted
+        2. Drain node immediately
+        
+        Args:
+            instance_id: EC2 Instance ID from event
+            
+        Returns:
+            Result dict
+        """
+        logger.info(f"Handling Spot Interruption for {instance_id}")
+        
+        # 1. Tag instance (using helper)
+        try:
+            handle_spot_interruption(instance_id, self._get_cluster_id())
+        except Exception as e:
+            logger.error(f"Failed to tag spot interruption: {e}")
+            
+        # 2. Resolve Node Name
+        node_name = self._get_node_name_from_instance(instance_id)
+        if not node_name:
+            logger.warning(f"Could not resolve node name for {instance_id}. Skipping drain.")
+            return {"success": False, "reason": "Node name not found"}
+            
+        # 3. Drain Node
+        logger.info(f"Draining node {node_name} due to spot interruption")
+        drain_result = self._drain_node(node_name, timeout=120) # 2 min max
+        
+        if drain_result:
+            logger.info(f"Successfully drained {node_name}. Termination will happen by AWS.")
+            return {"success": True, "action": "drained", "node": node_name}
+        else:
+            logger.error(f"Failed to drain {node_name}")
+            return {"success": False, "reason": "Drain failed"}
+
     def scale_up(self, nodes_to_add: int, reason: str) -> Dict:
         """
         Launch new worker nodes (mix of on-demand and spot)
@@ -77,13 +115,18 @@ class EC2Manager:
         try:
             # Launch spot instances
             if spot_count > 0:
-                logger.info(f"Launching {spot_count} spot instances")
-                spot_instances = self._launch_instances(
-                    template_id=self.worker_spot_template_id,
-                    count=spot_count,
-                    instance_type="spot"
-                )
-                instance_ids.extend(spot_instances)
+                try:
+                    logger.info(f"Launching {spot_count} spot instances")
+                    spot_instances = self._launch_instances(
+                        template_id=self.worker_spot_template_id,
+                        count=spot_count,
+                        instance_type="spot"
+                    )
+                    instance_ids.extend(spot_instances)
+                except Exception as e:
+                    logger.warning(f"Failed to launch Spot instances: {e}. Falling back to On-Demand.")
+                    ondemand_count += spot_count
+                    spot_count = 0
             
             # Launch on-demand instances
             if ondemand_count > 0:
@@ -165,6 +208,10 @@ class EC2Manager:
                 logger.info(f"Terminating instance {instance_id}")
                 self.ec2_client.terminate_instances(InstanceIds=[instance_id])
                 terminated_ids.append(instance_id)
+
+                # Delete K8s Node Object (Prevent Ghost Nodes)
+                if node_name:
+                    self._delete_node(node_name)
             
             logger.info(f"Successfully terminated {len(terminated_ids)} instances: {terminated_ids}")
             
@@ -302,7 +349,10 @@ class EC2Manager:
             Dict mapping node name to {'count': int, 'has_sts': bool}
         """
         try:
-            config.load_incluster_config()
+            if not self._load_kube_config():
+                logger.warning("_get_node_pod_info: Failed to load kube config")
+                return {}
+
             v1 = client.CoreV1Api()
             
             node_info = defaultdict(lambda: {'count': 0, 'has_sts': False})
@@ -361,7 +411,10 @@ class EC2Manager:
         
         try:
             # Load Kubernetes config
-            config.load_incluster_config()
+            if not self._load_kube_config():
+                logger.warning("_wait_for_nodes_ready: Failed to load kube config")
+                return []
+
             v1 = client.CoreV1Api()
             
             ready_nodes = []
@@ -435,28 +488,28 @@ class EC2Manager:
             True if successful, False otherwise
         """
         try:
-            # Load kubeconfig from environment or default location
-            kubeconfig_path = os.environ.get('KUBECONFIG', '/tmp/kubeconfig')
-            if os.path.exists(kubeconfig_path):
-                config.load_kube_config(config_file=kubeconfig_path)
-            else:
-                # Try in-cluster config (if Lambda runs with service account)
-                try:
-                    config.load_incluster_config()
-                except:
-                    logger.warning(f"No kubeconfig found, skipping drain for {node_name}")
-                    return True
+            # Load kubeconfig
+            if not self._load_kube_config():
+                logger.warning(f"Failed to load kube config, skipping drain for {node_name}")
+                return True # Fail open to allow termination? Or return False to block? Original code returned True on missing config.
             
             v1 = client.CoreV1Api()
             
             # Step 1: Cordon the node (mark as unschedulable)
-            logger.info(f"Cordoning node {node_name}")
-            body = {
-                "spec": {
-                    "unschedulable": True
+            try:
+                logger.info(f"Cordoning node {node_name}")
+                body = {
+                    "spec": {
+                        "unschedulable": True
+                    }
                 }
-            }
-            v1.patch_node(node_name, body)
+                v1.patch_node(node_name, body)
+            except ApiException as e:
+                if e.status == 404:
+                    logger.warning(f"Node {node_name} not found in K8s. Assuming it's already removed or never joined. Proceeding with termination.")
+                    return True
+                else:
+                    raise e
             
             # Step 2: Get all pods on the node
             logger.info(f"Getting pods on node {node_name}")
@@ -570,8 +623,9 @@ class EC2Manager:
                 logger.info(f"Waiting for {count} pods to finish evicting from {node_name}...")
                 time.sleep(10)
             
-            logger.warning(f"Drain timeout reached for {node_name} after {timeout}s. Proceeding anyway.")
-            return True
+            logger.warning(f"Drain timeout reached for {node_name} after {timeout}s. Aborting scale-down per requirements.")
+            self._uncordon_node(node_name)
+            return False
             
             logger.info(f"Successfully drained node {node_name}")
             return True
@@ -599,7 +653,9 @@ class EC2Manager:
             True if other replicas exist, False otherwise
         """
         try:
-            config.load_incluster_config()
+            if not self._load_kube_config():
+                return True
+
             v1 = client.CoreV1Api()
             apps_v1 = client.AppsV1Api()
             
@@ -691,4 +747,83 @@ class EC2Manager:
             
         except Exception as e:
             logger.error(f"Failed to uncordon node {node_name}: {e}")
+            return False
+
+    def _load_kube_config(self) -> bool:
+        """
+        Load Kubernetes configuration from available sources:
+        1. Environment variable KUBECONFIG
+        2. In-cluster config
+        3. Secrets Manager (node-fleet/kubeconfig)
+        """
+        # 1. Check if already loaded/available via env var
+        kubeconfig_path = os.environ.get('KUBECONFIG')
+        if kubeconfig_path and os.path.exists(kubeconfig_path):
+            try:
+                config.load_kube_config(config_file=kubeconfig_path)
+                return True
+            except Exception as e:
+                logger.warning(f"Failed to load from KUBECONFIG={kubeconfig_path}: {e}")
+
+        # 2. Try in-cluster config
+        try:
+            config.load_incluster_config()
+            return True
+        except:
+            pass
+            
+        # 3. Try Secrets Manager
+        try:
+            logger.info("Attempting to load kubeconfig from Secrets Manager (node-fleet/kubeconfig)...")
+            sm_client = boto3.client('secretsmanager')
+            secret_response = sm_client.get_secret_value(SecretId='node-fleet/kubeconfig')
+            kubeconfig_content = secret_response['SecretString']
+            
+            # Write to temporary file
+            # We use a fixed path /tmp/kubeconfig to reuse it across warm starts
+            tmp_path = '/tmp/kubeconfig'
+            with open(tmp_path, 'w') as f:
+                f.write(kubeconfig_content)
+            
+            os.environ['KUBECONFIG'] = tmp_path
+            config.load_kube_config(config_file=tmp_path)
+            logger.info(f"Successfully loaded kubeconfig from Secrets Manager to {tmp_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to load kubeconfig from all sources: {e}")
+            return False
+
+    def _delete_node(self, node_name: str) -> bool:
+        """
+        Delete Kubernetes node object after instance termination
+        
+        Args:
+            node_name: K8s node name
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self._load_kube_config():
+                logger.warning(f"Failed to load kube config, skipping node deletion for {node_name}")
+                return False
+            
+            v1 = client.CoreV1Api()
+            logger.info(f"Deleting Kubernetes node object {node_name}")
+            v1.delete_node(
+                name=node_name
+            )
+            logger.info(f"Successfully deleted node object {node_name}")
+            return True
+            
+        except ApiException as e:
+            if e.status == 404:
+                logger.info(f"Node {node_name} already deleted")
+                return True
+            else:
+                logger.error(f"Failed to delete node object {node_name}: {e}")
+                return False
+        except Exception as e:
+            logger.error(f"Error deleting node object {node_name}: {e}")
             return False

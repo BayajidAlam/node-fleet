@@ -20,7 +20,7 @@ get_custom_metrics = custom_metrics_module.get_custom_metrics
 @pytest.fixture
 def mock_prometheus():
     """Mock Prometheus connection"""
-    with patch('custom_metrics.PrometheusConnect') as mock:
+    with patch.object(custom_metrics_module, 'PrometheusConnect') as mock:
         prom_instance = MagicMock()
         mock.return_value = prom_instance
         yield prom_instance
@@ -28,7 +28,7 @@ def mock_prometheus():
 
 def test_custom_metrics_collector_init():
     """Test CustomMetricsCollector initialization"""
-    with patch('custom_metrics.PrometheusConnect'):
+    with patch.object(custom_metrics_module, 'PrometheusConnect'):
         collector = CustomMetricsCollector('http://localhost:9090')
         assert collector.prom is not None
 

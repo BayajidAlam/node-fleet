@@ -109,7 +109,7 @@ SmartScale is an **intelligent, serverless autoscaler** for K3s clusters that:
 
 #### 4. **Custom Application Metrics**
 
-- Queue depth monitoring (RabbitMQ/SQS integration)
+- Application queue depth monitoring (in-app task queues)
 - API latency tracking (p95, p99 response times)
 - Error rate monitoring (5xx responses)
 - Application-aware scaling decisions beyond CPU/memory
@@ -341,20 +341,24 @@ echo "http://$(cat ../master-ip.txt):30080"
 
 ### Operational Guides
 
+- [**Deployment Scripts**](scripts/) - Automation scripts for cluster/monitoring deployment
+- [**GitOps Directory**](gitops/) - FluxCD manifests and management scripts
 - [**Testing Guide**](docs/TESTING_GUIDE.md) - Unit, integration, and load testing procedures
 - [**Implementation Checklist**](docs/IMPLEMENTATION_CHECKLIST.md) - Progress tracking
 
-### Bonus Features
+### Advanced Features
 
 - [**Bonus Features Guide**](docs/BONUS_FEATURES_GUIDE.md) - Multi-AZ, Spot instances, predictive scaling
-- [**GitOps Integration**](docs/GITOPS_INTEGRATION.md) - FluxCD setup and workflows
-- [**Cost Dashboard**](docs/COST_DASHBOARD.md) - Real-time cost tracking implementation
+- [**Cost Exporter**](monitoring/cost_exporter.py) - Real-time AWS cost tracking (434 lines)
+- [**Grafana Dashboards**](monitoring/grafana-dashboards/) - 3 pre-built dashboards (cluster, autoscaler, cost)
+- [**Verification Tools**](scripts/verify-autoscaler-requirements.sh) - Comprehensive compliance checker
 
 ### API Reference
 
 - [**Pulumi Code**](pulumi/src/) - Infrastructure as Code modules
-- [**Lambda Functions**](lambda/) - Python autoscaler logic
+- [**Lambda Functions**](lambda/) - Python autoscaler logic (15 modules, 3,158 lines)
 - [**K3s Setup Scripts**](k3s/) - Master and worker initialization
+- [**Monitoring Stack**](monitoring/) - Prometheus, Grafana, exporters
 
 ---
 
@@ -648,7 +652,6 @@ aws lambda update-function-configuration \
 aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow --filter-pattern "ERROR"
 ```
 
-
 ## 👥 Contributing
 
 We welcome contributions! Please see our contributing guidelines:
@@ -675,7 +678,6 @@ pre-commit install
 black lambda/
 flake8 lambda/
 ```
-
 
 ## 📞 Support
 

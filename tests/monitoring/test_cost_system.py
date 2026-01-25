@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../monitoring'))
 
 from cost_exporter import EnhancedCostExporter, EC2_PRICING, SPOT_DISCOUNT
-from cost_optimizer import CostOptimizationRecommender
+from cost_optimizer import CostOptimizer as CostOptimizationRecommender
 
 
 class TestEnhancedCostExporter:
@@ -95,7 +95,8 @@ class TestEnhancedCostExporter:
         instances = [
             {'InstanceType': 't3.medium'},
             {'InstanceType': 't3.large'},
-            {'InstanceType': 't3.xlarge'}
+            {'InstanceType': 't3.xlarge'},
+            {'InstanceType': 't3.medium'}
         ]
         
         opportunities = exporter.detect_optimization_opportunities(instances)

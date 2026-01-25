@@ -22,7 +22,12 @@ import { k3sSecret, slackSecret } from "./secrets";
 import { slackTopic, slackNotifierLambda } from "./sns";
 import { keyPair } from "./keypair";
 import { masterInstance, masterPublicIp, masterPrivateIp } from "./ec2-master";
-import { workerLaunchTemplate, workerSpotTemplate } from "./ec2-worker";
+import {
+  workerLaunchTemplate,
+  workerSpotTemplate,
+  initialWorker1,
+  initialWorker2,
+} from "./ec2-worker";
 import {
   autoscalerLambda,
   autoscalerSchedule,
@@ -39,6 +44,7 @@ import {
   lambdaErrorAlarmArn,
   pendingPodsAlarmArn,
 } from "./cloudwatch-alarms";
+import { lambdaArtifactsBucket } from "./s3";
 
 // Export all infrastructure outputs
 export const vpcId = vpc.id;
@@ -61,12 +67,15 @@ export const lambdaRoleArn = lambdaRole.arn;
 export const masterInstanceId = masterInstance.id;
 export const masterPublicIpAddress = masterPublicIp;
 export const masterPrivateIpAddress = masterPrivateIp;
+export const initialWorker1InstanceId = initialWorker1.id;
+export const initialWorker2InstanceId = initialWorker2.id;
 export const workerLaunchTemplateId = workerLaunchTemplate.id;
 export const workerSpotLaunchTemplateId = workerSpotTemplate.id;
 
 // Lambda autoscaler exports
 export const autoscalerFunctionArn = autoscalerLambdaArn;
 export const autoscalerScheduleRuleName = autoscalerScheduleName;
+export const lambdaArtifactsBucketName = lambdaArtifactsBucket.id;
 
 // CloudWatch alarm exports
 export const alarms = {

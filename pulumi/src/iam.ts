@@ -186,6 +186,14 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
         Action: "iam:CreateServiceLinkedRole",
         Resource: "*",
       },
+      {
+        Effect: "Allow",
+        Action: [
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation"
+        ],
+        Resource: "*"
+      },
     ],
   })),
 });
@@ -197,5 +205,22 @@ export const lambdaVpcPolicy = new aws.iam.RolePolicyAttachment(
     role: lambdaRole.name,
     policyArn:
       "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+  }
+);
+
+// Attach SSM managed policy to Master Role
+export const masterSsmPolicy = new aws.iam.RolePolicyAttachment(
+  "master-ssm-policy",
+  {
+    role: masterRole.name,
+    policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+  }
+);
+
+export const workerBillingPolicy = new aws.iam.RolePolicyAttachment(
+  "worker-billing-policy",
+  {
+    role: workerRole.name,
+    policyArn: "arn:aws:iam::aws:policy/AWSBillingReadOnlyAccess",
   }
 );

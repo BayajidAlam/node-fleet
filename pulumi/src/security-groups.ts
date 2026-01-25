@@ -66,6 +66,14 @@ export const masterSg = new aws.ec2.SecurityGroup("master-sg", {
       cidrBlocks: ["10.0.0.0/16"],
       description: "Kubelet",
     },
+    // Node Exporter (Prometheus)
+    {
+      protocol: "tcp",
+      fromPort: 9100,
+      toPort: 9100,
+      cidrBlocks: ["10.0.0.0/16"],
+      description: "Node Exporter",
+    },
   ],
   egress: [
     {
@@ -110,6 +118,14 @@ export const workerSg = new aws.ec2.SecurityGroup("worker-sg", {
       toPort: 10250,
       cidrBlocks: ["10.0.0.0/16"],
       description: "Kubelet",
+    },
+    // Node Exporter (Prometheus)
+    {
+      protocol: "tcp",
+      fromPort: 9100,
+      toPort: 9100,
+      cidrBlocks: ["10.0.0.0/16"],
+      description: "Node Exporter",
     },
     // NodePort services range
     {

@@ -45,7 +45,7 @@
 - Average CPU usage > 70% for 3 consecutive minutes, OR
 - Pending pods exist for > 3 minutes (unschedulable workloads), OR
 - Memory utilization > 75% cluster-wide, OR
-- **[BONUS]** RabbitMQ queue depth > 1000 messages, OR
+- **[BONUS]** Application queue depth > 1000 tasks, OR
 - **[BONUS]** API response latency p95 > 2 seconds, OR
 - **[BONUS]** Error rate > 5% for 2+ minutes
 
@@ -460,7 +460,7 @@ kubectl apply -f https://github.com/kubernetes/kube-state-metrics/releases/downl
 - Panel 1: API request rate (QPS)
 - Panel 2: API latency (p50, p95, p99)
 - Panel 3: Error rate (%)
-- Panel 4: Queue depth (if using RabbitMQ)
+- Panel 4: Application queue depth (in-memory task queue)
 
 #### CloudWatch Metrics (Custom)
 
@@ -698,7 +698,6 @@ except InsufficientSpotCapacity:
    ```
 
 3. **ECR Authentication for K3s**:
-
    - Create IAM role for worker nodes with `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage` permissions
    - Attach role to EC2 instance profile (already done in worker IAM setup)
    - K3s automatically uses instance profile credentials to pull from ECR (no imagePullSecrets needed)
@@ -854,7 +853,7 @@ const workerInstanceProfile = new aws.iam.InstanceProfile(
   "k3s-worker-profile",
   {
     role: workerRole.name,
-  }
+  },
 );
 ```
 
@@ -899,7 +898,7 @@ const masterInstanceProfile = new aws.iam.InstanceProfile(
   "k3s-master-profile",
   {
     role: masterRole.name,
-  }
+  },
 );
 ```
 
@@ -1506,7 +1505,7 @@ def predict_load(current_time):
 
 **Metrics to Collect**:
 
-- **Queue Depth**: RabbitMQ/SQS message count
+- **Queue Depth**: Application task queue count (in-memory)
   - Scale-up if > 1000 messages
   - Scale-down if < 100 messages for 10 min
 - **API Latency**: p95 response time
@@ -1520,7 +1519,7 @@ def predict_load(current_time):
 
 ```promql
 # Queue depth
-rabbitmq_queue_messages{queue="orders"}
+app_queue_depth{queue="default"}
 
 # API latency p95
 histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{endpoint="/api/checkout"}[5m]))

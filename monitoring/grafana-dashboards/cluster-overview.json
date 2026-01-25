@@ -1,0 +1,313 @@
+{
+  "title": "Cluster Overview",
+  "tags": ["kubernetes", "cluster", "node-fleet"],
+  "timezone": "browser",
+  "schemaVersion": 16,
+  "version": 0,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Current Node Count",
+      "type": "gauge",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "count(kube_node_info)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 2,
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "short",
+          "min": 0,
+          "max": 10
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "CPU Utilization (24h)",
+      "type": "graph",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 9,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "avg(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) * 100",
+          "legendFormat": "CPU Usage %",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "percent",
+          "label": "CPU %",
+          "max": 100,
+          "min": 0
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Memory Utilization (24h)",
+      "type": "graph",
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 9,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "legendFormat": "Memory Usage %",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "percent",
+          "label": "Memory %",
+          "max": 100,
+          "min": 0
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Network I/O",
+      "type": "graph",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(node_network_receive_bytes_total[5m])) / 1024 / 1024",
+          "legendFormat": "Receive MB/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_network_transmit_bytes_total[5m])) / 1024 / 1024",
+          "legendFormat": "Transmit MB/s",
+          "refId": "B"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "MBs",
+          "label": "MB/s"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Disk I/O",
+      "type": "graph",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(node_disk_read_bytes_total[5m])) / 1024 / 1024",
+          "legendFormat": "Read MB/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_disk_written_bytes_total[5m])) / 1024 / 1024",
+          "legendFormat": "Write MB/s",
+          "refId": "B"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "MBs",
+          "label": "MB/s"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Pending Pods",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(kube_pod_status_phase{phase=\"Pending\"})",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 5,
+                "color": "red"
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Scaling Events Timeline",
+      "type": "graph",
+      "gridPos": {
+        "x": 6,
+        "y": 16,
+        "w": 18,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "increase(autoscaler_scale_up_total[5m])",
+          "legendFormat": "Scale Up Events",
+          "refId": "A"
+        },
+        {
+          "expr": "increase(autoscaler_scale_down_total[5m])",
+          "legendFormat": "Scale Down Events",
+          "refId": "B"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Events"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      },
+      "bars": true,
+      "lines": false
+    },
+    {
+      "id": 8,
+      "title": "Pod Distribution by Node",
+      "type": "heatmap",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "count(kube_pod_info) by (node)",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "dataFormat": "timeseries",
+      "heatmap": {},
+      "cards": {
+        "cardPadding": 2,
+        "cardRound": 2
+      },
+      "color": {
+        "mode": "spectrum",
+        "cardColor": "#b4ff00",
+        "colorScale": "sqrt",
+        "exponent": 0.5,
+        "colorScheme": "interpolateOranges"
+      },
+      "legend": {
+        "show": true
+      },
+      "yAxis": {
+        "format": "short"
+      }
+    }
+  ]
+}

@@ -21,12 +21,16 @@ SCALE_DOWN_COOLDOWN = 600  # 10 minutes
 
 
 class ScalingDecision:
-    """Evaluates metrics and decides scaling actions"""
+    """Evaluates metrics and decides scaling actions
+    
+    Note: All node counts refer to WORKER nodes only (master excluded).
+    Cluster minimum: 1 master + 2 workers = 3 total nodes
+    """
     
     def __init__(self, min_nodes: int, max_nodes: int, current_nodes: int, last_scale_time: int):
-        self.min_nodes = min_nodes
-        self.max_nodes = max_nodes
-        self.current_nodes = current_nodes
+        self.min_nodes = min_nodes  # Minimum WORKER nodes (default: 2)
+        self.max_nodes = max_nodes  # Maximum WORKER nodes (default: 10)
+        self.current_nodes = current_nodes  # Current WORKER nodes (excludes master)
         self.last_scale_time = last_scale_time
     
     def evaluate(self, metrics: Dict[str, float], history: List[Dict] = None, custom_metrics: Dict = None) -> Dict:

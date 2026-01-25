@@ -47,7 +47,7 @@ export const masterInstance = new aws.ec2.Instance(
       deleteOnTermination: true,
     },
   },
-  { dependsOn: [keyPair] }
+  { dependsOn: [keyPair], ignoreChanges: ["userData"] }
 );
 
 export const masterPublicIp = masterInstance.publicIp;

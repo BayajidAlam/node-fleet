@@ -17,11 +17,17 @@ ScalingDecision = scaling_decision_module.ScalingDecision
 
 @pytest.fixture
 def decision_engine():
-    """Create scaling decision engine with default config"""
+    """
+    Creates a ScalingDecision instance for testing
+    Note: All values refer to WORKER nodes only (master excluded)
+    - min_nodes=2: Minimum 2 workers (total cluster = 1 master + 2 workers = 3)
+    - max_nodes=10: Maximum 10 workers (total cluster = 11)
+    - current_nodes=2: Currently 2 workers running (normal minimum state)
+    """
     return ScalingDecision(
-        min_nodes=2,
-        max_nodes=10,
-        current_nodes=3,
+        min_nodes=2,  # Minimum WORKER nodes
+        max_nodes=10,  # Maximum WORKER nodes
+        current_nodes=2,  # Current WORKER nodes (changed from 3 to reflect actual minimum)
         last_scale_time=0
     )
 
@@ -34,7 +40,13 @@ def test_scale_up_high_cpu(decision_engine):
         "pending_pods": 0
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained high CPU (2 consecutive readings)
+    history = [
+        {"cpu_usage": 76.0, "memory_usage": 48.0, "pending_pods": 0},
+        {"cpu_usage": 74.0, "memory_usage": 49.0, "pending_pods": 0}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "scale_up"
     assert decision["nodes"] == 1
@@ -49,7 +61,13 @@ def test_scale_up_pending_pods(decision_engine):
         "pending_pods": 3
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained pending pods (2 consecutive readings)
+    history = [
+        {"cpu_usage": 48.0, "memory_usage": 49.0, "pending_pods": 2},
+        {"cpu_usage": 49.0, "memory_usage": 51.0, "pending_pods": 4}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "scale_up"
     assert decision["nodes"] >= 1
@@ -64,7 +82,13 @@ def test_scale_up_high_memory(decision_engine):
         "pending_pods": 0
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained high memory (2 consecutive readings)
+    history = [
+        {"cpu_usage": 48.0, "memory_usage": 78.0, "pending_pods": 0},
+        {"cpu_usage": 49.0, "memory_usage": 79.0, "pending_pods": 0}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "scale_up"
     assert decision["nodes"] >= 1
@@ -79,7 +103,13 @@ def test_scale_up_multiple_nodes_extreme_load(decision_engine):
         "pending_pods": 10
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained extreme load (2 consecutive readings)
+    history = [
+        {"cpu_usage": 86.0, "memory_usage": 79.0, "pending_pods": 12},
+        {"cpu_usage": 87.0, "memory_usage": 81.0, "pending_pods": 8}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "scale_up"
     assert decision["nodes"] == 2
@@ -95,7 +125,13 @@ def test_scale_up_blocked_at_max(decision_engine):
         "pending_pods": 5
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained high load but at max capacity
+    history = [
+        {"cpu_usage": 86.0, "memory_usage": 79.0, "pending_pods": 6},
+        {"cpu_usage": 87.0, "memory_usage": 81.0, "pending_pods": 4}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "none"
     assert "max capacity" in decision["reason"]
@@ -111,7 +147,13 @@ def test_scale_up_cooldown(decision_engine):
         "pending_pods": 0
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained high CPU but in cooldown
+    history = [
+        {"cpu_usage": 76.0, "memory_usage": 48.0, "pending_pods": 0},
+        {"cpu_usage": 74.0, "memory_usage": 49.0, "pending_pods": 0}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "none"
     assert "cooldown" in decision["reason"]
@@ -119,6 +161,7 @@ def test_scale_up_cooldown(decision_engine):
 
 def test_scale_down_low_utilization(decision_engine):
     """Test scale-down on low utilization"""
+    decision_engine.current_nodes = 4  # Start with 4 workers (above minimum of 2)
     decision_engine.last_scale_time = 0  # Long time ago
     
     metrics = {
@@ -127,11 +170,20 @@ def test_scale_down_low_utilization(decision_engine):
         "pending_pods": 0
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained low utilization (5 consecutive readings for scale-down)
+    history = [
+        {"cpu_usage": 26.0, "memory_usage": 38.0, "pending_pods": 0},
+        {"cpu_usage": 28.0, "memory_usage": 42.0, "pending_pods": 0},
+        {"cpu_usage": 24.0, "memory_usage": 39.0, "pending_pods": 0},
+        {"cpu_usage": 27.0, "memory_usage": 41.0, "pending_pods": 0},
+        {"cpu_usage": 25.0, "memory_usage": 40.0, "pending_pods": 0}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "scale_down"
     assert decision["nodes"] == 1
-    assert "Low utilization" in decision["reason"]
+    assert "Sustained low utilization" in decision["reason"]
 
 
 def test_scale_down_blocked_at_min(decision_engine):
@@ -145,7 +197,16 @@ def test_scale_down_blocked_at_min(decision_engine):
         "pending_pods": 0
     }
     
-    decision = decision_engine.evaluate(metrics)
+    # Mock sustained low utilization but at min capacity
+    history = [
+        {"cpu_usage": 22.0, "memory_usage": 28.0, "pending_pods": 0},
+        {"cpu_usage": 21.0, "memory_usage": 32.0, "pending_pods": 0},
+        {"cpu_usage": 19.0, "memory_usage": 29.0, "pending_pods": 0},
+        {"cpu_usage": 23.0, "memory_usage": 31.0, "pending_pods": 0},
+        {"cpu_usage": 20.0, "memory_usage": 30.0, "pending_pods": 0}
+    ]
+    
+    decision = decision_engine.evaluate(metrics, history=history)
     
     assert decision["action"] == "none"
     assert "min capacity" in decision["reason"]

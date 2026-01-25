@@ -7,6 +7,9 @@ import sys
 import os
 from unittest.mock import Mock, patch, MagicMock
 
+# Add lambda directory to sys.path for relative imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lambda'))
+
 # Import using importlib to avoid 'lambda' reserved keyword
 import importlib.util
 spec = importlib.util.spec_from_file_location("ec2_manager", os.path.join(os.path.dirname(__file__), '../../lambda/ec2_manager.py'))

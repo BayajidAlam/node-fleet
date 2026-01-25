@@ -12,6 +12,27 @@ import time
 from datetime import datetime, timedelta
 
 
+# Check if Kubernetes is available
+def is_k8s_available():
+    """Check if kubectl can connect to a cluster"""
+    try:
+        result = subprocess.run(
+            ["kubectl", "cluster-info"],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+# Skip all tests if Kubernetes not available
+pytestmark = pytest.mark.skipif(
+    not is_k8s_available(),
+    reason="Kubernetes cluster not available - these are integration tests"
+)
+
+
 class TestFluxInstallation:
     """Test FluxCD installation and setup"""
     

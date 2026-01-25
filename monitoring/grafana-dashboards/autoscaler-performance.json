@@ -1,0 +1,303 @@
+{
+  "title": "Autoscaler Performance",
+  "tags": ["autoscaler", "lambda", "performance", "node-fleet"],
+  "timezone": "browser",
+  "schemaVersion": 16,
+  "version": 0,
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Lambda Execution Duration",
+      "type": "histogram",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "namespace": "AWS/Lambda",
+          "metricName": "Duration",
+          "dimensions": {
+            "FunctionName": "node-fleet-dev-autoscaler"
+          },
+          "statistics": ["Average", "p50", "p95", "p99"],
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "ms",
+          "label": "Duration (ms)"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Lambda Invocation Count",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "namespace": "AWS/Lambda",
+          "metricName": "Invocations",
+          "dimensions": {
+            "FunctionName": "node-fleet-dev-autoscaler"
+          },
+          "statistics": ["Sum"],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 100,
+                "color": "yellow"
+              },
+              {
+                "value": 500,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Scaling Decisions",
+      "type": "piechart",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "ScaleUpEvents",
+          "dimensions": {},
+          "statistics": ["Sum"],
+          "refId": "A",
+          "alias": "Scale Up",
+          "id": "scale_up",
+          "type": "cloudwatch"
+        },
+        {
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "ScaleDownEvents",
+          "dimensions": {},
+          "statistics": ["Sum"],
+          "refId": "B",
+          "alias": "Scale Down",
+          "id": "scale_down",
+          "type": "cloudwatch"
+        },
+        {
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "NoActionEvents",
+          "dimensions": {},
+          "statistics": ["Sum"],
+          "refId": "C",
+          "alias": "No Action",
+          "id": "no_action",
+          "type": "cloudwatch"
+        }
+      ],
+      "options": {
+        "legend": {
+          "display": true,
+          "placement": "bottom"
+        },
+        "pieType": "pie",
+        "displayLabels": ["percent", "name"]
+      }
+    },
+    {
+      "id": 4,
+      "title": "Node Join Latency",
+      "type": "histogram",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "NodeJoinLatency",
+          "dimensions": {},
+          "statistics": ["Average", "p50", "p95", "p99", "Maximum"],
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "ms",
+          "label": "Time to Ready (ms)"
+        },
+        {
+          "format": "short"
+        }
+      ],
+      "xaxis": {
+        "mode": "time"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Cost Savings Estimate",
+      "type": "gauge",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"}) / (0.0416 * 10))) * 100",
+          "refId": "A",
+          "legendFormat": "Savings vs Always-On"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 20,
+                "color": "yellow"
+              },
+              {
+                "value": 40,
+                "color": "green"
+              },
+              {
+                "value": 60,
+                "color": "blue"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 6,
+      "title": "Lambda Errors",
+      "type": "graph",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "namespace": "AWS/Lambda",
+          "metricName": "Errors",
+          "dimensions": {
+            "FunctionName": "node-fleet-dev-autoscaler"
+          },
+          "statistics": ["Sum"],
+          "refId": "A"
+        },
+        {
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "ScalingFailures",
+          "dimensions": {},
+          "statistics": ["Sum"],
+          "refId": "B"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Error Count"
+        },
+        {
+          "format": "short"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Current Node Count",
+      "type": "graph",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "CurrentNodeCount",
+          "dimensions": {},
+          "statistics": ["Average"],
+          "refId": "A"
+        },
+        {
+          "expr": "count(kube_node_info)",
+          "refId": "B",
+          "legendFormat": "Actual Nodes (Prometheus)"
+        }
+      ],
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "Node Count",
+          "min": 0
+        },
+        {
+          "format": "short"
+        }
+      ]
+    }
+  ]
+}

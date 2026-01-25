@@ -1,5 +1,6 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { lambdaArtifactsBucket, lambdaPackage } from "./s3";
 
 const config = new pulumi.Config("node-fleet");
 const clusterName = config.require("clusterName");
@@ -82,7 +83,7 @@ new aws.iam.RolePolicy("audit-lambda-dynamodb-stream-policy", {
           Resource: streamArn,
         },
       ],
-    })
+    }),
   ),
 });
 
@@ -91,7 +92,8 @@ export const auditLambda = new aws.lambda.Function("audit-logger", {
   runtime: "python3.11",
   handler: "audit_logger.lambda_handler",
   role: auditLambdaRole.arn,
-  code: new pulumi.asset.FileArchive("../lambda"),
+  s3Bucket: lambdaArtifactsBucket.id,
+  s3Key: lambdaPackage.key,
   timeout: 60,
   memorySize: 256,
   environment: {
@@ -114,5 +116,5 @@ export const auditStreamMapping = new aws.lambda.EventSourceMapping(
     startingPosition: "LATEST",
     batchSize: 10,
     maximumBatchingWindowInSeconds: 5,
-  }
+  },
 );

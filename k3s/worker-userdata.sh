@@ -17,7 +17,7 @@ apt-get install -y awscli jq curl
 echo "🔐 Retrieving K3s token from Secrets Manager..."
 K3S_TOKEN=$(aws secretsmanager get-secret-value \
   --secret-id node-fleet/k3s-token \
-  --region ap-south-1 \
+  --region ap-southeast-1 \
   --query SecretString \
   --output text)
 
@@ -29,7 +29,7 @@ fi
 # Get master node IP from EC2 tags
 echo "🔍 Finding K3s master node..."
 MASTER_IP=$(aws ec2 describe-instances \
-  --region ap-south-1 \
+  --region ap-southeast-1 \
   --filters "Name=tag:Role,Values=k3s-master" "Name=instance-state-name,Values=running" \
   --query 'Reservations[0].Instances[0].PrivateIpAddress' \
   --output text)
