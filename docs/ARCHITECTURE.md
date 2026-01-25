@@ -47,6 +47,53 @@ SmartScale is a serverless autoscaling system for K3s clusters on AWS that uses 
 
 ---
 
+## Metrics Collection Architecture
+
+SmartScale uses **Prometheus as the unified metrics aggregator**, which collects data from two key sources:
+
+![Metrics Architecture](diagrams/metrics_architecture.png)
+
+### Metrics Sources
+
+**1. node-exporter** (System-level metrics)
+- Runs as a DaemonSet on every worker node
+- Exposes metrics on port 9100
+- Collects: CPU usage, memory, disk I/O, network I/O
+- Scrape interval: 15 seconds
+- Key metrics:
+  - `node_cpu_seconds_total` - CPU time per core
+  - `node_memory_MemAvailable_bytes` - Available memory
+  - `node_disk_io_time_seconds_total` - Disk I/O time
+  - `node_network_receive_bytes_total` - Network traffic
+
+**2. kube-state-metrics** (Kubernetes object metrics)
+- Runs on the master node
+- Exposes metrics on port 8080
+- Exposes K8s object state as Prometheus metrics
+- Key metrics:
+  - `kube_pod_status_phase{phase="Pending"}` - **Most critical for scaling**
+  - `kube_node_info` - Node inventory
+  - `kube_pod_container_resource_requests` - Resource requests
+
+### Lambda Query Flow
+
+```python
+# Lambda queries Prometheus, which aggregates both sources
+def collect_metrics():
+    # CPU from node-exporter
+    cpu = query_prometheus('avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100')
+    
+    # Memory from node-exporter
+    memory = query_prometheus('(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100')
+    
+    # Pending pods from kube-state-metrics
+    pending_pods = query_prometheus('sum(kube_pod_status_phase{phase="Pending"})')
+    
+    return {'cpu': cpu, 'memory': memory, 'pending_pods': pending_pods}
+```
+
+---
+
 ## Component Architecture
 
 ### AWS Infrastructure Components
