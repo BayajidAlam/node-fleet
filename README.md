@@ -134,49 +134,7 @@ SmartScale is an **intelligent, serverless autoscaler** for K3s clusters that:
 
 ### High-Level System Design
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         AWS Cloud (VPC)                         │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Public Subnets (2 AZs)                                  │  │
-│  │  ┌──────────────┐          ┌──────────────┐             │  │
-│  │  │ NAT Gateway  │          │ NAT Gateway  │             │  │
-│  │  │  (AZ-1)      │          │  (AZ-2)      │             │  │
-│  │  └──────────────┘          └──────────────┘             │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Private Subnets (2 AZs)                                 │  │
-│  │                                                          │  │
-│  │  ┌─────────────────┐      ┌──────────────────────────┐ │  │
-│  │  │  K3s Master     │      │  K3s Workers (2-10)      │ │  │
-│  │  │  ┌───────────┐  │      │  ┌────────┐  ┌────────┐ │ │  │
-│  │  │  │Prometheus │  │      │  │Worker-1│  │Worker-2│ │ │  │
-│  │  │  │  (30090)  │  │      │  │(Spot)  │  │(On-Dem)│ │ │  │
-│  │  │  └───────────┘  │      │  └────────┘  └────────┘ │ │  │
-│  │  │  ┌───────────┐  │      │  ┌────────┐  ┌────────┐ │ │  │
-│  │  │  │ Grafana   │  │      │  │Worker-N│  │Worker-N│ │ │  │
-│  │  │  │  (32000)  │  │      │  └────────┘  └────────┘ │ │  │
-│  │  │  └───────────┘  │      └──────────────────────────┘ │  │
-│  │  └─────────────────┘                                   │  │
-│  │                                                          │  │
-│  │  ┌─────────────────────────────────────────────────┐   │  │
-│  │  │  Lambda Function (Autoscaler)                   │   │  │
-│  │  │  • Triggered every 2 minutes by EventBridge     │   │  │
-│  │  │  • Queries Prometheus for metrics               │   │  │
-│  │  │  • Makes scaling decisions                      │   │  │
-│  │  │  • Launches/terminates EC2 instances            │   │  │
-│  │  └─────────────────────────────────────────────────┘   │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
-│  │  DynamoDB    │  │   Secrets    │  │     SNS      │         │
-│  │  State Table │  │   Manager    │  │  (Slack)     │         │
-│  └──────────────┘  └──────────────┘  └──────────────┘         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+![System Architecture](docs/diagrams/system_architecture.png)
 
 ### Data Flow
 
@@ -553,16 +511,6 @@ Estimated Savings: -₹2,000/day
 - DynamoDB Streams: All state changes logged
 - CloudTrail: API call auditing
 
-### Security Checklist
-
-Before going to production:
-
-- [ ] Rotate all secrets in Secrets Manager
-- [ ] Enable MFA for AWS Console access
-- [ ] Set up AWS Config for compliance monitoring
-- [ ] Enable VPC Flow Logs for network forensics
-- [ ] Configure AWS GuardDuty for threat detection
-- [ ] Implement AWS WAF if exposing services publicly
 
 ---
 
