@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../monitoring'))
 
 from cost_exporter import EnhancedCostExporter, EC2_PRICING, SPOT_DISCOUNT
-from cost_optimizer import CostOptimizer as CostOptimizationRecommender
+from cost_optimizer import CostOptimizationRecommender
 
 
 class TestEnhancedCostExporter:
