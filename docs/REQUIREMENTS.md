@@ -1816,22 +1816,22 @@ SELECT SUM(node_count * hourly_rate) FROM cloudwatch WHERE metric_name='EC2Cost'
 
 Before submission, ensure:
 
-- [ ] GitHub repo has 15+ commits (one per session)
-- [ ] README.md covers all required sections
-- [ ] Architecture diagram shows all AWS services
-- [ ] Lambda function code is clean, commented, tested
-- [ ] Prometheus collecting metrics from all nodes
-- [ ] Grafana dashboards visualize cluster health
-- [ ] DynamoDB lock mechanism prevents race conditions
-- [ ] Graceful drain tested (no pod disruptions)
-- [ ] CloudWatch alarms configured for failures
-- [ ] Slack notifications working for all event types
-- [ ] k6 load test results documented
-- [ ] Cost analysis shows 40-50% savings
-- [ ] Security: Secrets Manager, IAM roles, encrypted volumes
-- [ ] Pulumi IaC defines all infrastructure
-- [ ] Demo rehearsed, presentation slides ready
-- [ ] All bonus features documented (if implemented)
+GitHub repo has 15+ commits (one per session)
+README.md covers all required sections
+Architecture diagram shows all AWS services
+Lambda function code is clean, commented, tested
+Prometheus collecting metrics from all nodes
+Grafana dashboards visualize cluster health
+DynamoDB lock mechanism prevents race conditions
+Graceful drain tested (no pod disruptions)
+CloudWatch alarms configured for failures
+Slack notifications working for all event types
+k6 load test results documented
+Cost analysis shows 40-50% savings
+Security: Secrets Manager, IAM roles, encrypted volumes
+Pulumi IaC defines all infrastructure
+Demo rehearsed, presentation slides ready
+All bonus features documented (if implemented)
 
 ---
 

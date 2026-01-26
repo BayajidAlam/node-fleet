@@ -283,12 +283,12 @@ echo "http://$(cat ../master-ip.txt):30080"
 
 ### Quick Verification Checklist
 
-- [ ] K3s master node running and healthy (`kubectl get nodes`)
-- [ ] Prometheus collecting metrics (`curl http://master-ip:30090/api/v1/query?query=up`)
-- [ ] Lambda function executing (`aws logs tail /aws/lambda/...`)
-- [ ] DynamoDB state table exists (`aws dynamodb describe-table --table-name node-fleet-cluster-state`)
-- [ ] Grafana dashboards accessible (`kubectl port-forward svc/grafana 3000:80`)
-- [ ] Demo app responding (`curl http://master-ip:30080/health`)
+K3s master node running and healthy (`kubectl get nodes`)
+Prometheus collecting metrics (`curl http://master-ip:30090/api/v1/query?query=up`)
+Lambda function executing (`aws logs tail /aws/lambda/...`)
+DynamoDB state table exists (`aws dynamodb describe-table --table-name node-fleet-cluster-state`)
+Grafana dashboards accessible (`kubectl port-forward svc/grafana 3000:80`)
+Demo app responding (`curl http://master-ip:30080/health`)
 
 ---
 
