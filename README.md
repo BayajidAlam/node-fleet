@@ -22,7 +22,7 @@ _Reduce infrastructure costs by 40-50% through intelligent, event-driven autosca
 
 ---
 
-## 📋 Project Overview
+## 📋 Project Overview and Problem Statement
 
 ### Business Problem & Problem Statement
 
@@ -43,7 +43,7 @@ _Reduce infrastructure costs by 40-50% through intelligent, event-driven autosca
 
 ---
 
-## 🏗️ Architecture Explanation
+## 🏗️ Architecture Explanation with Diagrams
 
 ### High-Level System Design
 
@@ -269,7 +269,7 @@ See the full **[Verification Report](docs/TESTING.md)** for details.
 
 ---
 
-## 💰 Cost Analysis (Before vs After)
+## 💰 Cost Analysis (before/after autoscaler)
 
 | Resource | Baseline (5 Nodes Static) | node-fleet Optimized |
 | :--- | :--- | :--- |
