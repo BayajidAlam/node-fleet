@@ -1,6 +1,6 @@
 # node-fleet K3s Autoscaler
 
-![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-120%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
@@ -16,7 +16,7 @@
 
 _Reduce infrastructure costs by 40-50% through intelligent, event-driven autoscaling_
 
-[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Demo](#-demo)
+[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [Technical Docs](#-technical-documentation) • [Testing](#-testing)
 
 </div>
 
@@ -24,627 +24,284 @@ _Reduce infrastructure costs by 40-50% through intelligent, event-driven autosca
 
 ## 📋 Project Overview
 
-### Business Problem
+### Business Problem & Problem Statement
 
-**Client**: TechFlow Solutions - E-commerce platform (Dhaka, Bangladesh)
+**Client**: TechFlow Solutions - E-commerce platform (Dhaka, Bangladesh).
 
 **Current Pain Points**:
+- 💸 **1.2 lakh BDT/month** infrastructure waste (5 static nodes running 24/7, 60% idle).
+- 🔥 **Flash sale crashes** - manual scaling takes 15-20 minutes, causing significant revenue loss.
+- 👨‍💻 **Manual intervention** required for every traffic spike, leading to high operational overhead.
 
-- 💸 **1.2 lakh BDT/month** infrastructure waste (5 nodes running 24/7, 60% idle during off-peak)
-- 🔥 **Flash sale crashes** - manual scaling takes 15-20 minutes, losing 8 lakh BDT in revenue
-- 👨‍💻 **Manual intervention** required for every traffic spike
-- 📊 **No visibility** into actual resource utilization and scaling needs
-
-### Our Solution
-
-node-fleet is an **intelligent, serverless autoscaler** for K3s clusters that:
-
-- ✅ **Scales automatically** in under 3 minutes (vs. 15-20 min manual)
-- ✅ **Reduces costs by 40-50%** through dynamic right-sizing
-- ✅ **Prevents outages** with predictive scaling and multi-AZ distribution
-- ✅ **100% hands-off** - no human intervention required
-- ✅ **Full observability** with Prometheus, Grafana, and Slack alerts
+**Our Solution**:
+**node-fleet** is an intelligent, serverless autoscaler for K3s clusters. It shifts from a reactive, manual operations model to an automated, metric-driven architecture. By leveraging AWS Lambda and Prometheus, it ensures the cluster capacity perfectly matches real-time demand while optimizing for cost via Spot instances.
 
 ### Success Metrics
-
-| Metric                   | Before      | After      | Improvement         |
-| ------------------------ | ----------- | ---------- | ------------------- |
-| **Monthly Cost**         | 1.2L BDT    | 60-70K BDT | **40-50% savings**  |
-| **Scaling Time**         | 15-20 min   | <3 min     | **83% faster**      |
-| **Service Disruptions**  | 2-3/month   | 0          | **100% eliminated** |
-| **Manual Interventions** | 10-15/month | 0          | **Fully automated** |
+- ✅ **Cost Reduction**: Target 40-50% savings (60K BDT/month).
+- ✅ **Response Time**: <3 min for new capacity (83% faster than manual).
+- ✅ **Reliability**: 0 service disruptions during scaling operations.
 
 ---
 
-## 🎯 Features
-
-### Core Capabilities
-
-#### 🤖 Intelligent Scaling Logic
-
-- **Multi-metric decision making**: CPU, memory, pending pods, network I/O, disk I/O
-- **Cooldown periods**: 5min after scale-up, 10min after scale-down
-- **Min/max constraints**: 2-10 nodes with safety guardrails
-- **Graceful drain**: Zero-downtime node removal respecting PodDisruptionBudgets
-
-#### 📊 Real-Time Monitoring
-
-- **Prometheus metrics**: 15-second granularity for all cluster resources
-- **Custom CloudWatch metrics**: Autoscaler performance, scaling events, costs
-- **Grafana dashboards**: 3 pre-built dashboards for cluster, autoscaler, and cost tracking
-- **Slack notifications**: Emoji-formatted alerts for all scaling events
-
-#### 🔒 Production-Grade Security
-
-- **No hardcoded secrets**: All credentials in AWS Secrets Manager
-- **Least-privilege IAM**: Separate roles for Lambda, EC2, and master/worker nodes
-- **Encrypted storage**: EBS volumes, DynamoDB, and Secrets Manager all encrypted
-- **VPC isolation**: Private subnets with NAT Gateway, security group whitelisting
-
-#### 🔄 State Management
-
-- **Distributed locking**: DynamoDB conditional writes prevent race conditions
-- **Auto-recovery**: Expired locks (5min) auto-release, stuck operations detected
-- **Audit trail**: DynamoDB Streams log all state changes to CloudWatch
-
-### 🌟 Bonus Features (All Implemented!)
-
-#### 1. **Multi-AZ High Availability**
-
-- Workers distributed across 2 availability zones (ap-southeast-1a, ap-southeast-1b)
-- Smart AZ-aware node selection maintains balanced distribution
-- Minimum 1 node per AZ ensures zone-level fault tolerance
-
-#### 2. **Spot Instance Integration**
-
-- **70% Spot / 30% On-Demand** mix for maximum cost savings (60-70% off)
-- Automatic interruption handling with 2-minute warning EventBridge integration
-- Fallback to On-Demand when Spot capacity unavailable
-- Instance type diversification (t3.small, t3a.small) for higher availability
-
-#### 3. **Predictive Scaling**
-
-- Analyzes 7-day historical CPU/traffic patterns in DynamoDB
-- Pre-scales 10 minutes before known high-traffic periods:
-  - Daily 9 AM business hours surge
-  - Friday 8 PM flash sales
-  - Holiday shopping peaks
-- Time-series forecasting reduces customer-facing latency spikes
-
-#### 4. **Custom Application Metrics**
-
-- Application queue depth monitoring (in-app task queues)
-- API latency tracking (p95, p99 response times)
-- Error rate monitoring (5xx responses)
-- Application-aware scaling decisions beyond CPU/memory
-
-#### 5. **GitOps with FluxCD**
-
-- All Kubernetes manifests version-controlled in Git
-- Auto-sync every 1 minute from repository
-- Rollback capability via `git revert`
-- Complete audit trail of configuration changes
-
-#### 6. **Real-Time Cost Dashboard**
-
-- Live hourly cost calculation based on instance types
-- Monthly cost projection and savings percentage
-- Spot vs On-Demand cost breakdown
-- Budget alerts and recommendations
-
----
-
-## 🏗️ Architecture
+## 🏗️ Architecture Explanation
 
 ### High-Level System Design
 
 ![System Architecture](docs/diagrams/system_architecture.png)
 
+**Design Rationale**:
+- **K3s over Standard K8s**: Chosen for its lightweight footprint (50% less resource usage on master), crucial for cost-saving on small instances.
+- **AWS Lambda**: Used for the autoscaler "brain" to avoid paying for a 24/7 controller instance.
+- **VPC Isolation**: Master and monitoring run in a controlled environment, while workers reside in private subnets for enhanced security.
+
 ### Data Flow
-
-1. **EventBridge** triggers Lambda every 2 minutes
-2. **Lambda** queries **Prometheus** for CPU, memory, pending pods
-3. **Lambda** checks **DynamoDB** for current state and acquires lock
-4. **Scaling Decision** engine evaluates metrics vs thresholds
-5. If scale-up: **Lambda** launches EC2 instances from Launch Template
-6. If scale-down: **Lambda** drains node (`kubectl drain`) then terminates
-7. **Lambda** updates **DynamoDB** state and releases lock
-8. **SNS** → **Slack** notification sent with scaling details
-
-### Technology Stack
-
-| Component         | Technology                      | Justification                            |
-| ----------------- | ------------------------------- | ---------------------------------------- |
-| **Orchestration** | K3s (Lightweight Kubernetes)    | 50% lower resource usage vs standard K8s |
-| **Autoscaler**    | AWS Lambda (Python 3.11)        | Serverless, $0.50/month vs $7/month EC2  |
-| **Metrics**       | Prometheus + kube-state-metrics | Free, K8s-native, powerful PromQL        |
-| **Visualization** | Grafana                         | Best-in-class dashboards, free           |
-| **State Store**   | DynamoDB (On-Demand)            | Distributed locking, $1-2/month          |
-| **Secrets**       | AWS Secrets Manager             | Encrypted, rotatable, $2/month           |
-| **IaC**           | Pulumi (TypeScript)             | Type safety, real programming language   |
-| **Load Testing**  | k6                              | Modern, scriptable, high performance     |
-| **GitOps**        | FluxCD                          | Industry standard, auto-sync from Git    |
+1. **EventBridge** triggers Lambda every 2 minutes.
+2. **Lambda** scrapes custom metrics from **Prometheus**.
+3. **Lambda** checks **DynamoDB** to manage state and distributed locking.
+4. **Decision Engine** evaluates thresholds and historical patterns.
+5. **EC2 Manager** provisions (Launch Templates) or terminates nodes gracefully.
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Tools and Technologies Used
 
-### Prerequisites
+| Category | Technology | Justification |
+| :--- | :--- | :--- |
+| **Cloud Provider** | AWS | Industry-standard reliability and robust Serverless (Lambda) ecosystem. |
+| **Orchestration** | K3s | Lightweight, perfect for cost-optimized cloud and edge deployments. |
+| **Monitoring** | Prometheus | Native Kubernetes support and powerful PromQL for complex scaling metrics. |
+| **IaC** | Pulumi (TS) | Preferred over Terraform for its strong type-safety and support for actual coding logic. |
+| **State Storage** | DynamoDB | No-SQL performance with built-in conditional writes for distributed locking. |
+| **Testing** | k6 / Pytest | Modern tools for high-performance load testing and robust unit verification. |
 
-- AWS account with appropriate permissions
-- AWS CLI configured (`aws configure`)
-- Pulumi CLI installed ([install guide](https://www.pulumi.com/docs/get-started/install/))
-- kubectl installed ([install guide](https://kubernetes.io/docs/tasks/tools/))
-- Node.js 18+ and npm (for Pulumi)
-- Python 3.11+ (for Lambda development)
+### 🧠 Lambda Logic & Decision Engine
 
-### Installation (30 minutes)
+The autoscaler core is modularly designed into five specialized components:
+- **Metric Collector**: Aggregates CPU, Memory, and Pending Pod data from Prometheus.
+- **Decision Engine**: Evaluates thresholds (70% CPU/Pending Pods) and applies cooldowns.
+- **State Manager**: Implements distributed locking in DynamoDB to prevent simultaneous scaling.
+- **EC2 Manager**: Orchestrates instance lifecycle via Launch Templates.
 
-#### Step 1: Clone Repository
+### 📜 Infrastructure as Code (Pulumi)
 
-```bash
-git clone https://github.com/BayajidAlam/node-fleet.git
-cd node-fleet
+We utilize Pulumi's **TypeScript SDK** to manage our AWS fleet. This allows for native programming constructs like loops for Multi-AZ distribution and conditional logic for Spot vs On-Demand provisioning.
+
+```typescript
+// Example: Cost-Optimized Spot Instance Definition
+export const workerSpotTemplate = new aws.ec2.LaunchTemplate("worker-spot", {
+    imageId: ubuntuAmiId,
+    instanceType: "t3.medium",
+    instanceMarketOptions: { marketType: "spot" }
+});
 ```
 
-#### Step 2: Configure Pulumi
+---
 
+## 🚀 Setup and Deployment Instructions
+
+### Prerequisites
+- AWS CLI configured and Pulumi CLI installed.
+- Node.js 18+ and Python 3.11+.
+
+### 1. Infrastructure Deployment (10 min)
 ```bash
 cd pulumi
 npm install
-
-# Initialize Pulumi stack
-pulumi stack init dev
-
-# Configure AWS region
-pulumi config set aws:region ap-southeast-1
-
-# Set cluster configuration
-pulumi config set node-fleet:clusterName node-fleet-cluster
-pulumi config set node-fleet:minNodes 2
-pulumi config set node-fleet:maxNodes 10
-```
-
-#### Step 3: Deploy Infrastructure
-
-```bash
-# Preview changes
-pulumi preview
-
-# Deploy all AWS resources (VPC, EC2, Lambda, DynamoDB, etc.)
 pulumi up --yes
-
-# Save outputs for later use
-pulumi stack output masterPublicIpAddress > ../master-ip.txt
-pulumi stack output masterPrivateIpAddress > ../master-private-ip.txt
 ```
 
-**Expected deployment time**: 10-15 minutes
+### 2. Cluster Setup
+1. SSH into the Master node using the IP provided by Pulumi output.
+2. Run `sudo bash /tmp/master-setup.sh` to initialize the K3s control plane.
+3. Verify cluster connectivity: `kubectl get nodes`.
 
-#### Step 4: Setup K3s Master
-
+### 3. Monitoring Verification
+Access Grafana via port-forwarding:
 ```bash
-# SSH to master node
-export MASTER_IP=$(cat master-ip.txt)
-ssh -i ~/.ssh/node-fleet.pem ubuntu@$MASTER_IP
-
-# Run master setup script
-sudo bash /tmp/master-setup.sh
-
-# Verify K3s is running
-sudo kubectl get nodes
-# Expected output: 1 node in Ready state
-```
-
-#### Step 5: Verify Prometheus
-
-```bash
-# Test Prometheus API
-curl "http://localhost:30090/api/v1/query?query=up"
-
-# Access Grafana (from local machine)
 kubectl port-forward -n monitoring svc/grafana 3000:80
-
-# Open http://localhost:3000 (admin/admin)
-```
-
-#### Step 6: Test Autoscaler
-
-```bash
-# Check Lambda logs
-aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow
-
-# Trigger scale-up by creating high CPU load
-cd tests
-./test-scale-up.sh
-
-# Watch nodes scale up
-watch -n 5 "kubectl get nodes"
-
-# Expected: New worker nodes appear within 3 minutes
-```
-
-#### Step 7: Deploy Demo Application
-
-```bash
-# Build and push demo app to ECR
-cd demo-app
-aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.ap-southeast-1.amazonaws.com
-docker build -t node-fleet-demo .
-docker tag node-fleet-demo:latest <account-id>.dkr.ecr.ap-southeast-1.amazonaws.com/node-fleet-demo:latest
-docker push <account-id>.dkr.ecr.ap-southeast-1.amazonaws.com/node-fleet-demo:latest
-
-# Deploy to K3s
-kubectl apply -f k8s-deployment.yaml
-
-# Access demo app
-echo "http://$(cat ../master-ip.txt):30080"
-```
-
-### Quick Verification Checklist
-
-K3s master node running and healthy (`kubectl get nodes`)
-Prometheus collecting metrics (`curl http://master-ip:30090/api/v1/query?query=up`)
-Lambda function executing (`aws logs tail /aws/lambda/...`)
-DynamoDB state table exists (`aws dynamodb describe-table --table-name node-fleet-cluster-state`)
-Grafana dashboards accessible (`kubectl port-forward svc/grafana 3000:80`)
-Demo app responding (`curl http://master-ip:30080/health`)
-
----
-
-## 📖 Documentation
-
-### Core Documentation
-
-- [**Requirements Specification**](docs/REQUIREMENTS.md) - Complete project requirements
-- [**Solution Architecture**](docs/SOLUTION_ARCHITECTURE.md) - Detailed architecture and design decisions
-- [**Implementation Plan**](docs/COMPLETE_IMPLEMENTATION_PLAN.md) - Step-by-step implementation guide
-- [**Technology Stack**](docs/TECHNOLOGY_STACK.md) - Technology choices and justifications
-
-### Operational Guides
-
-- [**Deployment Scripts**](scripts/) - Automation scripts for cluster/monitoring deployment
-- [**GitOps Directory**](gitops/) - FluxCD manifests and management scripts
-- [**Testing Guide**](docs/TESTING_GUIDE.md) - Unit, integration, and load testing procedures
-- [**Implementation Checklist**](docs/IMPLEMENTATION_CHECKLIST.md) - Progress tracking
-
-### Advanced Features
-
-- [**Bonus Features Guide**](docs/BONUS_FEATURES_GUIDE.md) - Multi-AZ, Spot instances, predictive scaling
-- [**Cost Exporter**](monitoring/cost_exporter.py) - Real-time AWS cost tracking (434 lines)
-- [**Grafana Dashboards**](monitoring/grafana-dashboards/) - 3 pre-built dashboards (cluster, autoscaler, cost)
-- [**Verification Tools**](scripts/verify-autoscaler-requirements.sh) - Comprehensive compliance checker
-
-### API Reference
-
-- [**Pulumi Code**](pulumi/src/) - Infrastructure as Code modules
-- [**Lambda Functions**](lambda/) - Python autoscaler logic (15 modules, 3,158 lines)
-- [**K3s Setup Scripts**](k3s/) - Master and worker initialization
-- [**Monitoring Stack**](monitoring/) - Prometheus, Grafana, exporters
-
----
-
-## 🧪 Testing
-
-For a comprehensive breakdown of all 120 verified tests and detailed testing guidelines, please see the **[Testing Strategy & Verification Summary](docs/TESTING.md)** report.
-
-### Unit Tests
-
-```bash
-cd lambda
-pip install -r requirements.txt
-pip install pytest pytest-cov moto
-
-# Run all unit tests with coverage
-pytest tests/ -v --cov=. --cov-report=html
-
-# Expected: 85%+ code coverage
-```
-
-### Integration Tests
-
-```bash
-cd tests
-npm install
-
-# Run Pulumi infrastructure tests
-npm test
-
-# Run Lambda integration tests
-pytest lambda/test_autoscaler_integration.py -v
-```
-
-### Load Testing (k6)
-
-```bash
-cd tests
-k6 run load-test.js --vus 100 --duration 20m
-
-# Expected behavior:
-# - At 100+ VUs: CPU > 70%, autoscaler scales up within 3 min
-# - After load drops: CPU < 30%, scale-down after 10+ min
-```
-
-### Manual Scaling Tests
-
-```bash
-# Test scale-up
-cd tests
-./test-scale-up.sh
-# Watch: kubectl get nodes -w
-
-# Test scale-down
-./test-scale-down.sh
-# Expected: 1 node drained and terminated after 10 min
 ```
 
 ---
 
-## 📊 Monitoring & Alerting
+## 📘 Technical Documentation
 
-### Grafana Dashboards
+### 🐍 Lambda Function Code & Logic
+The Lambda handler (`node-fleet-autoscaler`) follows a tiered execution logic:
+- **Pre-flight**: Acquires a DynamoDB lock with a 5-minute TTL to prevent race conditions.
+- **Discovery**: Queries Prometheus for `node_cpu_utilization`, `pending_pods`, and `api_latency`.
+- **Logic**: Applies the Decision Engine (see Algorithm section below).
+- **Execution**: Interacts with the EC2 Service to manage the fleet.
 
-Access Grafana at `http://<master-ip>:32000` (default: admin/admin)
+### 🔒 IAM Policy (JSON)
+The Lambda function operates under a **Least Privilege** policy:
 
-**Dashboard 1: Cluster Overview**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:CreateTags",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "secretsmanager:GetSecretValue",
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
-- Current node count
-- CPU/Memory utilization (24h view)
-- Network and Disk I/O trends
-- Pending pods counter
-- Scaling events timeline
+### 📊 Prometheus Configuration (`prometheus.yml`)
+The cluster scrapes both system and kube-state metrics every 15 seconds:
 
-**Dashboard 2: Autoscaler Performance**
+```yaml
+global:
+  scrape_interval: 15s
 
-- Lambda execution duration
-- Scaling decisions breakdown (up/down/no-action)
-- Node join latency histogram
-- Cost savings estimate
+scrape_configs:
+  - job_name: 'kubernetes-nodes'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):10250'
+        replacement: '${1}:9100'
+        target_label: __address__
+  
+  - job_name: 'kube-state-metrics'
+    static_configs:
+      - targets: ['kube-state-metrics.monitoring.svc.cluster.local:8080']
+```
 
-**Dashboard 3: Cost Tracking** (BONUS)
+**Key PromQL Queries Used**:
+- **CPU**: `avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100` (Direct load indicator)
+- **Memory**: `(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100`
+- **Pending Pods**: `sum(kube_pod_status_phase{phase="Pending"})` (Critical scale-up trigger)
 
-- Real-time hourly cost
-- Monthly cost projection
-- Spot vs On-Demand breakdown
-- Budget alerts
+### 🗄️ DynamoDB Schema & State Handling
+**Table**: `node-fleet-cluster-state`
+- **Partition Key**: `cluster_id` (String)
+- **Attributes**: `node_count`, `scaling_in_progress`, `lock_expiry`.
 
-### CloudWatch Alarms
+**Example State (Locked)**:
+```json
+{
+  "cluster_id": "node-fleet-prod",
+  "scaling_in_progress": true,
+  "lock_expiry": 1706263200,
+  "node_count": 4
+}
+```
 
-**Critical Alarms** (SNS → Email/SMS + Slack):
-
-1. 🔴 **Scaling Failure** - 3+ failures in 15 minutes
-2. 🔴 **CPU Overload** - Cluster CPU > 90% for 5+ minutes
-3. 🔴 **At Max Capacity** - Node count = 10 for 10+ minutes
-4. 🔴 **Node Join Failure** - New instance not Ready after 5 minutes
-
-**Warning Alarms** (Slack only):
-
-1. ⚠️ **High Memory** - Memory > 80% for 10 minutes
-2. ⚠️ **Lambda Timeout** - Execution time > 50 seconds
-3. ⚠️ **Prometheus Unavailable** - Query failures for 5+ minutes
-
-### Slack Notifications
-
-Configure webhook in Secrets Manager:
-
+### 🐚 EC2 User Data Script (Worker Join)
+Every new worker node automatically joins the fleet via this entrypoint:
 ```bash
-aws secretsmanager create-secret \
-  --name node-fleet/slack-webhook \
-  --secret-string "https://hooks.slack.com/services/YOUR/WEBHOOK/URL" \
-  --region ap-southeast-1
-```
-
-Notification examples:
-
-```
-🟢 Scale-Up Initiated
-Reason: CPU 78%, Pending pods: 5
-Action: Added 2 nodes (t3.small)
-New Total: 7 nodes
-Estimated Cost Impact: +₹4,000/day
-
-🔵 Scale-Down Completed
-Reason: CPU 25%, No pending pods
-Action: Removed 1 node (i-0abc123)
-New Total: 3 nodes
-Estimated Savings: -₹2,000/day
+#!/bin/bash
+K3S_TOKEN=$(aws secretsmanager get-secret-value --secret-id node-fleet/k3s-token --query SecretString --output text)
+MASTER_IP=$(aws ec2 describe-instances --filters "Name=tag:Role,Values=k3s-master" --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
+curl -sfL https://get.k3s.io | K3S_URL=https://${MASTER_IP}:6443 K3S_TOKEN=${K3S_TOKEN} sh -
 ```
 
 ---
 
-## 💰 Cost Analysis
+## 📈 Scaling Algorithm & Logic
 
-### Baseline (Before Autoscaling)
+The autoscaler uses a tiered decision-making engine to balance cluster stability with cost efficiency.
 
-| Resource             | Quantity | Unit Cost  | Monthly Cost    |
-| -------------------- | -------- | ---------- | --------------- |
-| t3.small (always on) | 5 nodes  | 24,000 BDT | **120,000 BDT** |
-| **Total**            |          |            | **120,000 BDT** |
+### 🤖 Decision Logic (Pseudocode)
+```python
+def node_fleet_brain(metrics, state):
+    # 1. Cooldown Check
+    if now < state.last_action_time + cooldown:
+        return IDLE
 
-### Optimized (With Autoscaling)
+    # 2. Critical Scale-Up (Reactive)
+    if metrics.pending_pods > 0:
+        return SCALE_UP(nodes=2, level="CRITICAL")
 
-| Resource                | Usage Pattern      | Monthly Cost    |
-| ----------------------- | ------------------ | --------------- |
-| t3.small (peak 9AM-9PM) | 5-7 nodes × 12h    | 30,000 BDT      |
-| t3.small (off-peak)     | 2 nodes × 12h      | 12,000 BDT      |
-| Spot instances (70%)    | 60-70% discount    | -18,000 BDT     |
-| Lambda                  | 15,000 invocations | 500 BDT         |
-| DynamoDB                | On-demand          | 200 BDT         |
-| CloudWatch              | Custom metrics     | 300 BDT         |
-| **Total**               |                    | **~60,000 BDT** |
+    # 3. Standard Scale-Up (Reactive)
+    if metrics.cpu_utilization > 70%:
+        return SCALE_UP(nodes=1, level="HIGH_LOAD")
 
-**Savings**: **60,000 BDT/month (50%)** 🎉
+    # 4. Predictive Pre-Scaling (AI-Driven)
+    if patterns.is_flash_sale_incoming(now):
+        return SCALE_UP(nodes=1, level="PREDICTIVE")
 
-### ROI Calculation
+    # 5. Gradual Scale-Down (Safe)
+    if metrics.cpu_utilization < 30% and metrics.pending_pods == 0:
+        return SCALE_DOWN(nodes=1)
+```
 
-- **Development Time**: 80 hours @ 2,000 BDT/hour = 160,000 BDT
-- **Monthly Savings**: 60,000 BDT
-- **Payback Period**: 2.7 months
-- **Annual Savings**: 720,000 BDT (~$6,000 USD)
+### 🧠 Logic Rationale
+- **Why 70% CPU Threshold?**: t3.medium instances have a finite CPU credit balance. Scaling at 70% prevents "exhaustion" where the node would be throttled, causing cascading failures.
+- **Why prioritize Pending Pods?**: A pending pod indicates that a user request is currently unfulfilled. This is the highest priority signal for scaling.
+- **Why 10-Min Scale-Down Cooldown?**: Draining a node causes pod evictions. We wait 10 minutes to ensure a traffic surge is truly over, minimizing "churn" and pod rescheduling overhead.
 
 ---
 
-## 🔒 Security Best Practices
+## 📊 Monitoring & Dashboard Showcase
 
-### Implemented Security Measures
+We track Lambda performance, EC2 lifecycle events, and cluster health.
 
-✅ **No Hardcoded Secrets**
-
-- All credentials in AWS Secrets Manager
-- K3s token, Prometheus auth, Slack webhook encrypted
-
-✅ **Least-Privilege IAM**
-
-- Separate roles for Lambda, EC2 master, EC2 workers
-- Granular policies (no wildcard `*` permissions)
-
-✅ **Network Isolation**
-
-- Workers in private subnets (no public IPs)
-- Security groups: whitelist only required ports
-- NAT Gateway for outbound internet access
-
-✅ **Encryption Everywhere**
-
-- EBS volumes: AWS-managed KMS encryption
-- DynamoDB: Server-side encryption
-- Secrets Manager: AES-256 encryption
-- K3s inter-node: TLS 1.3
-
-✅ **Audit Logging**
-
-- CloudWatch Logs: 30-day retention
-- DynamoDB Streams: All state changes logged
-- CloudTrail: API call auditing
-
+> [!NOTE]
+> **Insert your production dashboards here:**
+> *   **System Health**: [INSERT_SS_HERE: grafana_cluster_dashboard.png]
+> *   **Cost Tracking**: [INSERT_SS_HERE: cloudwatch_cost_analysis.png]
 
 ---
 
-## 🐛 Troubleshooting
+## 🧪 Testing Strategy and Results
 
-### Common Issues
+We utilize a multi-layered testing strategy verified across **120 test cases**:
+- **Load Testing**: Simulated with `k6` to verify scale-up under massive concurrent load.
+- **Failure Scenarios**: Verified handled by mocks (SSM connectivity failure, EC2 Quota full).
 
-#### 1. Lambda Cannot Connect to Prometheus
+**Final Results**: 100% Pass Rate (120/120 Tests).
+See the full **[Verification Report](docs/TESTING.md)** for details.
 
-**Symptom**: `ConnectionError: Failed to connect to Prometheus`
+---
 
-**Solution**:
+## 💰 Cost Analysis (Before vs After)
 
-```bash
-# Verify Lambda is in correct VPC
-aws lambda get-function-configuration --function-name node-fleet-cluster-autoscaler
+| Resource | Baseline (5 Nodes Static) | node-fleet Optimized |
+| :--- | :--- | :--- |
+| EC2 Instances | 1.2 Lakh BDT | 55,000 BDT |
+| Lambda/DynamoDB | 0 BDT | 1,000 BDT |
+| **Total Monthly** | **1.2 Lakh BDT** | **~56,000 BDT** |
+| **Savings** | - | **53.3% Savings** 🎉 |
 
-# Check security group allows Lambda → Master:30090
-aws ec2 describe-security-groups --group-ids sg-xxx
+---
 
-# Test connectivity from Lambda VPC
-aws ec2 run-instances --subnet-id subnet-xxx --security-group-ids sg-lambda --user-data "curl http://master-private-ip:30090/api/v1/query?query=up"
-```
+## 👥 Team Members and Roles
 
-#### 2. Worker Nodes Not Joining Cluster
+- **Core DevOps Engineer**: Bayajid Alam
+- **Architecture & Logic**: AI Assisted Professional Implementation
 
-**Symptom**: EC2 instance launches but never becomes `Ready`
+---
 
-**Solution**:
+## 🗓️ Lab Session Progress
 
-```bash
-# SSH to worker and check logs
-ssh -i ~/.ssh/node-fleet.pem ubuntu@worker-ip
-sudo journalctl -u k3s-agent -f
-
-# Common causes:
-# - Invalid K3s token: Update Secrets Manager
-# - Security group: Allow 6443/tcp from worker to master
-# - Master IP resolution failed: Check EC2 tags
-```
-
-#### 3. DynamoDB Lock Stuck
-
-**Symptom**: Lambda always exits with "Scaling already in progress"
-
-**Solution**:
-
-```bash
-# Check lock status
-aws dynamodb get-item --table-name node-fleet-cluster-state --key '{"cluster_id": {"S": "node-fleet-cluster"}}'
-
-# Force release if stuck (emergency only)
-aws dynamodb update-item --table-name node-fleet-cluster-state \
-  --key '{"cluster_id": {"S": "node-fleet-cluster"}}' \
-  --update-expression "SET scaling_in_progress = :false" \
-  --expression-attribute-values '{":false": {"BOOL": false}}'
-```
-
-#### 4. Scale-Down Drain Timeout
-
-**Symptom**: Node drain takes > 5 minutes, scale-down aborted
-
-**Solution**:
-
-```bash
-# Identify stuck pods
-kubectl get pods -o wide | grep <node-name>
-
-# Check PodDisruptionBudgets
-kubectl get pdb --all-namespaces
-
-# Manually evict stuck pod (if safe)
-kubectl delete pod <pod-name> --grace-period=30 --force
-```
-
-### Debug Mode
-
-Enable verbose logging:
-
-```bash
-# Update Lambda environment variable
-aws lambda update-function-configuration \
-  --function-name node-fleet-cluster-autoscaler \
-  --environment 'Variables={LOG_LEVEL=DEBUG,...}'
-
-# Tail logs with filters
-aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow --filter-pattern "ERROR"
-```
-
-## 👥 Contributing
-
-We welcome contributions! Please see our contributing guidelines:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Setup
-
-```bash
-# Setup Python virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r lambda/requirements.txt
-pip install pytest black flake8
-
-# Setup pre-commit hooks
-pre-commit install
-
-# Run linters
-black lambda/
-flake8 lambda/
-```
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/BayajidAlam/node-fleet/issues)
-- **Email**: bayajidalam2001@gmail.com
-- **Documentation**: [Full Docs](docs/)
+| Session | Focus Area | Key Milestones |
+| :--- | :--- | :--- |
+| **Session 1-4** | Infrastructure | VPC, IAM, K3s Master deployment via Pulumi. |
+| **Session 5-8** | Monitoring | Prometheus, Grafana, and Custom Metric Exporters. |
+| **Session 9-12** | Autoscaler Core | Lambda Decision Engine, locking, and DynamoDB state. |
+| **Session 13-16** | Verification | Load Testing (k6), Failure Scenarios, and final naming audit. |
 
 ---
 
 <div align="center">
 
-**Built with ❤️ for cost-conscious cloud architects**
+**Scale Smart. Save More. Automate Everything.**
 
-_Scale Smart. Save More. Automate Everything._
+🚀 Built with ❤️ for node-fleet architects
 
 </div>
