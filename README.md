@@ -121,6 +121,13 @@ Access Grafana via port-forwarding:
 kubectl port-forward -n monitoring svc/grafana 3000:80
 ```
 
+### ☁️ Deployment Environment Options
+
+You may deploy this architecture in the following environments:
+- **AWS Free Tier (Recommended)**: 1x t3.micro master, 2x t3.micro workers (minimize costs).
+- **LocalStack + Minikube**: Simulate AWS services (Lambda, DynamoDB) locally for development.
+- **On-premise K3s cluster**: Raspberry Pi or VM lab with mocked AWS service endpoints.
+
 ---
 
 ## 📘 Technical Documentation
