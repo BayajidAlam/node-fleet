@@ -7,10 +7,17 @@ import sys
 import os
 from unittest.mock import Mock, MagicMock, patch
 
+# Add parent directory and lambda directory to path to import lambda modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../lambda')))
+
 # Import using importlib to avoid 'lambda' reserved keyword
 import importlib.util
 spec = importlib.util.spec_from_file_location("spot_instance_helper", os.path.join(os.path.dirname(__file__), '../../lambda/spot_instance_helper.py'))
 spot_helper_module = importlib.util.module_from_spec(spec)
+
+# Register in sys.modules so patch('spot_instance_helper.boto3') works
+sys.modules['spot_instance_helper'] = spot_helper_module
 spec.loader.exec_module(spot_helper_module)
 
 calculate_spot_ondemand_mix = spot_helper_module.calculate_spot_ondemand_mix

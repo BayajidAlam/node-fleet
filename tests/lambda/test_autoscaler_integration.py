@@ -8,10 +8,15 @@ import os
 from unittest.mock import Mock, patch, MagicMock
 
 # Add lambda directory to path to allow importing autoscaler directly
-# (avoiding 'lambda' reserved keyword issue)
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../lambda'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../lambda')))
 
-import autoscaler
+# Import using importlib to avoid 'lambda' reserved keyword issue
+import importlib.util
+spec = importlib.util.spec_from_file_location("autoscaler", os.path.join(os.path.dirname(__file__), '../../lambda/autoscaler.py'))
+autoscaler = importlib.util.module_from_spec(spec)
+sys.modules['autoscaler'] = autoscaler
+spec.loader.exec_module(autoscaler)
 
 @pytest.fixture
 def mock_env(monkeypatch):

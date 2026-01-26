@@ -14,6 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lambda'))
 import importlib.util
 spec = importlib.util.spec_from_file_location("ec2_manager", os.path.join(os.path.dirname(__file__), '../../lambda/ec2_manager.py'))
 ec2_manager_module = importlib.util.module_from_spec(spec)
+
+# Register in sys.modules so patch('ec2_manager.boto3') works
+sys.modules['ec2_manager'] = ec2_manager_module
 spec.loader.exec_module(ec2_manager_module)
 EC2Manager = ec2_manager_module.EC2Manager
 
@@ -21,9 +24,17 @@ EC2Manager = ec2_manager_module.EC2Manager
 @pytest.fixture
 def mock_ec2():
     """Mock EC2 client"""
-    with patch('lambda.ec2_manager.boto3') as mock_boto:
+    with patch('ec2_manager.boto3') as mock_boto:
         mock_client = MagicMock()
         mock_boto.client.return_value = mock_client
+        
+        # Mock subnet discovery (needed for scale-up logic)
+        mock_client.describe_subnets.return_value = {
+            'Subnets': [
+                {'SubnetId': 'subnet-az1', 'AvailabilityZone': 'ap-south-1a'},
+                {'SubnetId': 'subnet-az2', 'AvailabilityZone': 'ap-south-1b'}
+            ]
+        }
         yield mock_client
 
 
@@ -31,8 +42,7 @@ def test_scale_up_on_demand_only(mock_ec2):
     """Test scaling up with on-demand instances"""
     mock_ec2.run_instances.return_value = {
         'Instances': [
-            {'InstanceId': 'i-123'},
-            {'InstanceId': 'i-456'}
+            {'InstanceId': 'i-123'}
         ]
     }
     

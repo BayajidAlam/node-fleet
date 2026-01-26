@@ -12,25 +12,15 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def calculate_spot_ondemand_mix(current_nodes: int, desired_nodes: int, existing_spot_count: int, existing_ondemand_count: int) -> Dict[str, int]:
+def calculate_spot_ondemand_mix(current_nodes: int, desired_nodes: int, existing_spot_count: int, existing_ondemand_count: int, target_spot_ratio: float = 0.70) -> Dict[str, int]:
     """
-    Calculate how many spot vs on-demand instances to launch to maintain 70/30 ratio.
-    
-    Args:
-        current_nodes: Current total node count
-        desired_nodes: Target node count after scaling
-        existing_spot_count: Current number of spot instances
-        existing_ondemand_count: Current number of on-demand instances
-    
-    Returns:
-        Dict with 'spot' and 'ondemand' keys indicating how many of each to launch
+    Calculate how many spot vs on-demand instances to launch to maintain target ratio.
     """
     nodes_to_add = desired_nodes - current_nodes
     if nodes_to_add <= 0:
         return {'spot': 0, 'ondemand': 0}
     
-    # Target: 70% spot, 30% on-demand
-    target_spot_ratio = 0.70
+    # Target ratio (e.g., 0.70 for 70% spot)
     
     # Calculate ideal total counts
     # Ensure desired_nodes is int (boto3 DynamoDB returns Decimal)

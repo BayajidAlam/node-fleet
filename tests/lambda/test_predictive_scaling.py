@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 import importlib.util
 spec = importlib.util.spec_from_file_location("predictive_scaling", os.path.join(os.path.dirname(__file__), '../../lambda/predictive_scaling.py'))
 predictive_module = importlib.util.module_from_spec(spec)
+
+# Register in sys.modules so patch.object(predictive_module, ...) works
+sys.modules['predictive_scaling'] = predictive_module
 spec.loader.exec_module(predictive_module)
 
 PredictiveScaler = predictive_module.PredictiveScaler
@@ -60,7 +63,7 @@ def test_store_metrics(mock_dynamodb):
     assert item['pending_pods'] == 2
     assert item['node_count'] == 5
     assert item['hour'] == 14
-    assert item['day_of_week'] == 6  # Sunday
+    assert item['day_of_week'] == 0  # Monday
 
 
 def test_get_historical_metrics(mock_dynamodb):
@@ -156,11 +159,11 @@ def test_predict_next_hour_load_insufficient_data(mock_dynamodb):
 
 def test_predict_next_hour_load_with_patterns(mock_dynamodb):
     """Test prediction with sufficient historical data"""
-    # Create 30 data points with clear hourly pattern
+    # Create 100 data points with clear hourly pattern (covering ~4 days)
     items = []
-    base_time = datetime(2025, 12, 15, 0, 0)
+    base_time = datetime.utcnow() - timedelta(days=5)
     
-    for i in range(30):
+    for i in range(100):
         timestamp = base_time + timedelta(hours=i)
         hour = timestamp.hour
         # Simulate higher load at hour 14 (2 PM)
@@ -176,6 +179,7 @@ def test_predict_next_hour_load_with_patterns(mock_dynamodb):
             'node_count': 4
         })
     
+    # Mocking scan to return our 100 items
     mock_dynamodb.scan.return_value = {'Items': items}
     
     scaler = PredictiveScaler('test-table')

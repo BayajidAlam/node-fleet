@@ -12,6 +12,9 @@ from botocore.exceptions import ClientError
 import importlib.util
 spec = importlib.util.spec_from_file_location("state_manager", os.path.join(os.path.dirname(__file__), '../../lambda/state_manager.py'))
 state_manager_module = importlib.util.module_from_spec(spec)
+
+# Register in sys.modules so patch('state_manager.boto3') works
+sys.modules['state_manager'] = state_manager_module
 spec.loader.exec_module(state_manager_module)
 StateManager = state_manager_module.StateManager
 
@@ -19,7 +22,7 @@ StateManager = state_manager_module.StateManager
 @pytest.fixture
 def mock_dynamodb():
     """Mock DynamoDB client"""
-    with patch('lambda.state_manager.boto3') as mock_boto:
+    with patch('state_manager.boto3') as mock_boto:
         mock_resource = MagicMock()
         mock_table = MagicMock()
         mock_boto.resource.return_value = mock_resource

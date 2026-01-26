@@ -99,12 +99,13 @@ class EC2Manager:
         current_ondemand_count = len(worker_instances) - current_spot_count
         current_total = len(worker_instances)
         
-        # Calculate smart spot/on-demand mix to maintain 70/30 ratio
+        # Calculate smart spot/on-demand mix to maintain target ratio
         mix = calculate_spot_ondemand_mix(
             current_nodes=current_total,
             desired_nodes=current_total + nodes_to_add,
             existing_spot_count=current_spot_count,
-            existing_ondemand_count=current_ondemand_count
+            existing_ondemand_count=current_ondemand_count,
+            target_spot_ratio=self.spot_percentage / 100.0
         )
         
         spot_count = mix['spot']
