@@ -132,6 +132,13 @@ The Lambda handler (`node-fleet-autoscaler`) follows a tiered execution logic:
 - **Logic**: Applies the Decision Engine (see Algorithm section below).
 - **Execution**: Interacts with the EC2 Service to manage the fleet.
 
+**Required Environment Variables**:
+- `PROMETHEUS_URL`: Endpoint for cluster metrics.
+- `DYNAMODB_TABLE`: Name of the state tracking table.
+- `CLUSTER_ID`: Unique identifier for the node fleet.
+- `SNS_TOPIC_ARN`: ARN for scaling alert notifications.
+- `MIN_NODES` / `MAX_NODES`: Guardrails for fleet size.
+
 ### 🔒 IAM Policy (JSON)
 The Lambda function operates under a **Least Privilege** policy:
 
@@ -247,12 +254,22 @@ def node_fleet_brain(metrics, state):
 
 ---
 
-## 📊 Monitoring & Dashboard Showcase
+### 🎬 Monitoring & Alerting Strategy
 
-We track Lambda performance, EC2 lifecycle events, and cluster health.
+We track Lambda performance, EC2 lifecycle events, and cluster health in real-time.
+
+**CloudWatch Metrics Tracked**:
+- `LambdaDuration` / `LambdaErrors`: Monitors autoscaler health.
+- `EC2LaunchEvents` / `EC2Terminations`: Tracks fleet churn.
+- `ClusterCPUUtilization` / `PendingPodCount`: Core scaling signals.
+
+**Alarms Configuration**:
+- 🔴 **Scaling Failure**: Triggered after 3 consecutive Lambda errors → Sends **SNS Notification**.
+- 🔴 **CPU Overload**: Triggered if Cluster CPU > 90% for 5 minutes → Sends **Urgent Pager Alert**.
+- ⚠️ **Capacity Warning**: Triggered if Node Count stays at Maximum for 10+ minutes.
 
 > [!NOTE]
-> **Insert your production dashboards here:**
+> **Dashboard Showcase:**
 > *   **System Health**: [INSERT_SS_HERE: grafana_cluster_dashboard.png]
 > *   **Cost Tracking**: [INSERT_SS_HERE: cloudwatch_cost_analysis.png]
 
@@ -262,7 +279,13 @@ We track Lambda performance, EC2 lifecycle events, and cluster health.
 
 We utilize a multi-layered testing strategy verified across **120 test cases**:
 - **Load Testing**: Simulated with `k6` to verify scale-up under massive concurrent load.
-- **Failure Scenarios**: Verified handled by mocks (SSM connectivity failure, EC2 Quota full).
+- **Scale-Up/Down Testing**: Procedure to verify nodes launch, join, and drain correctly without impact.
+- **Failure Scenarios Tested**:
+  - **Lambda Timeout**: Verified state recovery after execution interruption.
+  - **EC2 Quota Full**: Logic handles "Insufficient Capacity" gracefully.
+  - **Prometheus Down**: System enters "Safety Mode" (holds current state).
+  - **Lock Stuck**: lock_expiry mechanism auto-clears stale DynamoDB locks.
+  - **Node Join Failure**: Automated termination of "Ghost" instances (NotReady nodes).
 
 **Final Results**: 100% Pass Rate (120/120 Tests).
 See the full **[Verification Report](docs/TESTING.md)** for details.
