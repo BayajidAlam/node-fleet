@@ -1,0 +1,40 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/bayajidswe/My-files/poridhi-project/node-fleet/tests/test_venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/bayajidswe/My-files/poridhi-project/node-fleet/tests/lambda
+configfile: pytest.ini
+plugins: cov-7.0.0
+collecting ... collected 10 items
+
+lambda/test_scaling_decision.py::test_scale_up_high_cpu PASSED           [ 10%]
+lambda/test_scaling_decision.py::test_scale_up_pending_pods PASSED       [ 20%]
+lambda/test_scaling_decision.py::test_scale_up_high_memory PASSED        [ 30%]
+lambda/test_scaling_decision.py::test_scale_up_multiple_nodes_extreme_load PASSED [ 40%]
+lambda/test_scaling_decision.py::test_scale_up_blocked_at_max PASSED     [ 50%]
+lambda/test_scaling_decision.py::test_scale_up_cooldown PASSED           [ 60%]
+lambda/test_scaling_decision.py::test_scale_down_low_utilization PASSED  [ 70%]
+lambda/test_scaling_decision.py::test_scale_down_blocked_at_min PASSED   [ 80%]
+lambda/test_scaling_decision.py::test_scale_down_blocked_by_pending_pods PASSED [ 90%]
+lambda/test_scaling_decision.py::test_no_scaling_stable_metrics PASSED   [100%]
+ERROR: Coverage failure: total of 12 is less than fail-under=30
+
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
+
+Name                                    Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------
+lambda/test_autoscaler_integration.py      70     70     0%   5-163
+lambda/test_custom_metrics.py             123    123     0%   5-286
+lambda/test_ec2_manager.py                 51     51     0%   5-156
+lambda/test_metrics_collector.py           36     36     0%   5-68
+lambda/test_multi_az.py                    42     42     0%   5-109
+lambda/test_predictive_scaling.py         139    139     0%   5-331
+lambda/test_scaling_decision.py            80      0   100%
+lambda/test_spot_instances.py              88     88     0%   5-247
+lambda/test_state_manager.py               56     56     0%   5-105
+---------------------------------------------------------------------
+TOTAL                                     685    605    12%
+Coverage HTML written to dir htmlcov
+FAIL Required test coverage of 30% not reached. Total coverage: 11.68%
+============================== 10 passed in 0.10s ==============================

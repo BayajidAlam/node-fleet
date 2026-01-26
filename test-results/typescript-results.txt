@@ -1,0 +1,87 @@
+
+> smartscale-tests@1.0.0 test
+> jest
+
+  console.log
+    🧪 Starting SmartScale test suite
+
+      at Object.<anonymous> (setup.ts:23:11)
+
+  console.log
+    ✅ Test suite completed
+
+      at Object.<anonymous> (setup.ts:27:11)
+
+PASS pulumi/iam.test.ts
+  IAM Roles and Policies
+    ✓ Lambda role should have EC2 permissions (2 ms)
+    ✓ Lambda role should have DynamoDB permissions
+    ✓ Lambda role should have Secrets Manager read permission
+    ✓ Lambda role should have SNS publish permission (1 ms)
+    ✓ Master role should have ECR pull permissions
+    ✓ Worker role should have minimal permissions
+
+  console.log
+    🧪 Starting SmartScale test suite
+
+      at Object.<anonymous> (setup.ts:23:11)
+
+  console.log
+    🧪 Starting SmartScale test suite
+
+      at Object.<anonymous> (setup.ts:23:11)
+
+  console.log
+    ✅ Test suite completed
+
+      at Object.<anonymous> (setup.ts:27:11)
+
+  console.log
+    ✅ Test suite completed
+
+      at Object.<anonymous> (setup.ts:27:11)
+
+PASS pulumi/vpc.test.ts
+  VPC Infrastructure
+    ✓ should create VPC with correct CIDR (2 ms)
+    ✓ should create 2 public subnets in different AZs
+    ✓ should create 2 private subnets in different AZs
+    ✓ should create Internet Gateway
+    ✓ should create NAT Gateways for HA (1 ms)
+
+PASS pulumi/security-groups.test.ts
+  Security Groups
+    ✓ master security group should allow K3s API port 6443 (2 ms)
+    ✓ master security group should allow kubelet port 10250
+    ✓ master security group should allow etcd ports 2379-2380
+    ✓ worker security group should allow all traffic from master
+    ✓ lambda security group should allow outbound HTTPS
+    ✓ master security group should allow Prometheus port 9090
+    ✓ master security group should allow Grafana port 3000
+
+  console.log
+    🧪 Starting SmartScale test suite
+
+      at Object.<anonymous> (setup.ts:23:11)
+
+  console.log
+    ✅ Test suite completed
+
+      at Object.<anonymous> (setup.ts:27:11)
+
+PASS pulumi/lambda.test.ts
+  Lambda Autoscaler Infrastructure
+    ✓ should create Lambda with Python 3.11 runtime (2 ms)
+    ✓ should set Lambda timeout to 300 seconds
+    ✓ should set Lambda memory to 512 MB
+    ✓ should configure Lambda with required environment variables (1 ms)
+    ✓ should create EventBridge rule with 2-minute schedule
+    ✓ should attach Lambda to VPC with private subnets
+    ✓ should create CloudWatch log group with 7-day retention
+    ✓ should grant EventBridge permission to invoke Lambda
+
+Test Suites: 4 passed, 4 total
+Tests:       26 passed, 26 total
+Snapshots:   0 total
+Time:        2.133 s, estimated 5 s
+Ran all test suites.

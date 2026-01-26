@@ -1,0 +1,32 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/bayajidswe/My-files/poridhi-project/node-fleet/tests/test_venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/bayajidswe/My-files/poridhi-project/node-fleet/tests
+plugins: cov-7.0.0
+collecting ... collected 17 items
+
+monitoring/test_cost_system.py::TestEnhancedCostExporter::test_calculate_instance_cost_ondemand PASSED [  5%]
+monitoring/test_cost_system.py::TestEnhancedCostExporter::test_calculate_instance_cost_spot PASSED [ 11%]
+monitoring/test_cost_system.py::TestEnhancedCostExporter::test_calculate_spot_savings PASSED [ 17%]
+monitoring/test_cost_system.py::TestEnhancedCostExporter::test_calculate_resource_costs PASSED [ 23%]
+monitoring/test_cost_system.py::TestEnhancedCostExporter::test_detect_optimization_opportunities PASSED [ 29%]
+monitoring/test_cost_system.py::TestEnhancedCostExporter::test_get_pod_count PASSED [ 35%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_analyze_spot_opportunities_low_usage PASSED [ 41%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_analyze_spot_opportunities_good_usage PASSED [ 47%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_analyze_reserved_instance_opportunities PASSED [ 52%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_analyze_multi_az_balance_balanced PASSED [ 58%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_analyze_multi_az_balance_unbalanced PASSED [ 64%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_generate_report_structure PASSED [ 70%]
+monitoring/test_cost_system.py::TestCostOptimizationRecommender::test_estimate_downsize_savings PASSED [ 76%]
+monitoring/test_cost_system.py::TestCostMetricsIntegration::test_pricing_data_complete PASSED [ 82%]
+monitoring/test_cost_system.py::TestCostMetricsIntegration::test_spot_discount_valid PASSED [ 88%]
+monitoring/test_cost_system.py::TestCostMetricsIntegration::test_monthly_budget_calculations PASSED [ 94%]
+monitoring/test_cost_system.py::TestCostSystemEndToEnd::test_full_cost_analysis_workflow PASSED [100%]
+
+=============================== warnings summary ===============================
+monitoring/test_cost_system.py:286
+  /home/bayajidswe/My-files/poridhi-project/node-fleet/tests/monitoring/test_cost_system.py:286: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.integration
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 17 passed, 1 warning in 0.11s =========================
