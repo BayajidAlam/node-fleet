@@ -82,7 +82,7 @@ The autoscaler core is modularly designed into five specialized components:
 - **State Manager**: Implements distributed locking in DynamoDB to prevent simultaneous scaling.
 - **EC2 Manager**: Orchestrates instance lifecycle via Launch Templates.
 
-### 📜 Infrastructure as Code (Pulumi)
+### 📜 Terraform/IaC Definitions
 
 We utilize Pulumi's **TypeScript SDK** to manage our AWS fleet. This allows for native programming constructs like loops for Multi-AZ distribution and conditional logic for Spot vs On-Demand provisioning.
 
@@ -125,7 +125,7 @@ kubectl port-forward -n monitoring svc/grafana 3000:80
 
 ## 📘 Technical Documentation
 
-### 🐍 Lambda Function Code & Logic
+### 🐍 Lambda Function Code and Logic
 The Lambda handler (`node-fleet-autoscaler`) follows a tiered execution logic:
 - **Pre-flight**: Acquires a DynamoDB lock with a 5-minute TTL to prevent race conditions.
 - **Discovery**: Queries Prometheus for `node_cpu_utilization`, `pending_pods`, and `api_latency`.
@@ -159,7 +159,7 @@ The Lambda function operates under a **Least Privilege** policy:
 }
 ```
 
-### 📊 Prometheus Configuration (`prometheus.yml`)
+### 📊 Prometheus Configuration (prometheus.yml)
 The cluster scrapes both system and kube-state metrics every 15 seconds:
 
 ```yaml
@@ -186,7 +186,7 @@ scrape_configs:
 - **Memory**: `(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100`
 - **Pending Pods**: `sum(kube_pod_status_phase{phase="Pending"})` (Critical scale-up trigger)
 
-### 🗄️ DynamoDB Schema & State Handling
+### 🗄️ DynamoDB Schema and Example Data
 **Table**: `node-fleet-cluster-state`
 - **Partition Key**: `cluster_id` (String)
 - **Attributes**: `node_count`, `scaling_in_progress`, `lock_expiry`.
