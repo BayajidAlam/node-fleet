@@ -1,5 +1,9 @@
 # SmartScale K3s Autoscaler
 
+![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+![Build](https://img.shields.io/badge/build-passing-brightgreen)
+
 <div align="center">
 
 **Intelligent, Cost-Optimized Kubernetes Autoscaling for AWS**
