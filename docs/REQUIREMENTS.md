@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Complete Requirements Specification
+# node-fleet K3s Autoscaler - Complete Requirements Specification
 
 ## 📋 Project Overview
 
@@ -87,7 +87,7 @@
    - Validates join success by checking `systemctl status k3s-agent`
 3. Lambda polls node status every 10 seconds (max 5 minutes)
 4. Wait for node condition `Ready=True` before marking scale-up complete
-5. Tag instance with: `Project: SmartScale`, `ManagedBy: Lambda`, `ScalingGroup: k3s-workers`
+5. Tag instance with: `Project: node-fleet`, `ManagedBy: Lambda`, `ScalingGroup: k3s-workers`
 
 **Requirements**:
 
@@ -133,7 +133,7 @@
 **DynamoDB Schema**:
 
 - **Table Name**: `k3s-autoscaler-state`
-- **Partition Key**: `cluster_id` (String) - value: `smartscale-prod`
+- **Partition Key**: `cluster_id` (String) - value: `node-fleet-prod`
 - **Attributes**:
   - `node_count` (Number) - current active worker nodes
   - `last_scale_time` (Number) - Unix timestamp of last scaling event
@@ -148,7 +148,7 @@
 # Acquire lock with conditional write
 response = dynamodb.put_item(
     TableName='k3s-autoscaler-state',
-    Item={'cluster_id': 'smartscale-prod', 'scaling_in_progress': 'true', 'lock_expiry': now + 300},
+    Item={'cluster_id': 'node-fleet-prod', 'scaling_in_progress': 'true', 'lock_expiry': now + 300},
     ConditionExpression='attribute_not_exists(scaling_in_progress) OR lock_expiry < :now'
 )
 # If ConditionCheckFailedException → another Lambda holds lock, exit gracefully
@@ -186,7 +186,7 @@ response = dynamodb.put_item(
 ```bash
 PROMETHEUS_URL=http://<master-private-ip>:30090
 DYNAMODB_TABLE=k3s-autoscaler-state
-CLUSTER_ID=smartscale-prod
+CLUSTER_ID=node-fleet-prod
 K3S_TOKEN_SECRET_ARN=arn:aws:secretsmanager:us-east-1:xxx:secret:k3s-token
 MASTER_NODE_TAG=Role:k3s-master
 MIN_NODES=2
@@ -270,7 +270,7 @@ SLACK_WEBHOOK_URL=<from Secrets Manager>
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:us-east-1:*:log-group:/aws/lambda/smartscale-autoscaler:*"
+      "Resource": "arn:aws:logs:us-east-1:*:log-group:/aws/lambda/node-fleet-autoscaler:*"
     },
     {
       "Effect": "Allow",
@@ -314,7 +314,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: "smartscale-prod"
+    cluster: "node-fleet-prod"
 
 scrape_configs:
   - job_name: "kubernetes-nodes"
@@ -481,7 +481,7 @@ kubectl apply -f https://github.com/kubernetes/kube-state-metrics/releases/downl
 
 **SNS Topic Setup**:
 
-- **Topic Name**: `smartscale-autoscaler-alerts`
+- **Topic Name**: `node-fleet-autoscaler-alerts`
 - **Subscriptions**:
   - Email: `devops-team@techflow.com` (for critical alerts)
   - SMS: `+880-XXX-XXXX` (for emergency capacity issues)
@@ -492,7 +492,7 @@ kubectl apply -f https://github.com/kubernetes/kube-state-metrics/releases/downl
 
 ```json
 {
-  "Subject": "🔴 SmartScale Alert: Scaling Failure",
+  "Subject": "🔴 node-fleet Alert: Scaling Failure",
   "Message": {
     "AlarmName": "ScalingFailureAlarm",
     "NewStateValue": "ALARM",
@@ -602,12 +602,12 @@ Time: 2025-12-22 14:30:00 UTC
 - **CloudWatch Logs**: Retain Lambda logs for 30 days (set retention policy in Pulumi)
   ```typescript
   const logGroup = new aws.cloudwatch.LogGroup("lambda-logs", {
-    name: "/aws/lambda/smartscale-autoscaler",
+    name: "/aws/lambda/node-fleet-autoscaler",
     retentionInDays: 30,
   });
   ```
 - **DynamoDB Streams**: Audit all state changes (optional)
-- **Cost Explorer**: Tag all resources with `Project:SmartScale` for cost tracking
+- **Cost Explorer**: Tag all resources with `Project:node-fleet` for cost tracking
 
 ### 9. Cost Optimization
 
@@ -649,7 +649,7 @@ except InsufficientSpotCapacity:
 #### Cost Tracking
 
 - **Tag all resources**:
-  - `Project: SmartScale`
+  - `Project: node-fleet`
   - `Environment: Production`
   - `ManagedBy: Lambda`
   - `InstanceType: Spot/OnDemand`
@@ -690,11 +690,11 @@ except InsufficientSpotCapacity:
 2. **Build & Push to ECR**:
 
    ```bash
-   aws ecr create-repository --repository-name smartscale-demo-app
+   aws ecr create-repository --repository-name node-fleet-demo-app
    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
-   docker build -t smartscale-demo-app:latest demo-app/
-   docker tag smartscale-demo-app:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/smartscale-demo-app:latest
-   docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/smartscale-demo-app:latest
+   docker build -t node-fleet-demo-app:latest demo-app/
+   docker tag node-fleet-demo-app:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/node-fleet-demo-app:latest
+   docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/node-fleet-demo-app:latest
    ```
 
 3. **ECR Authentication for K3s**:
@@ -724,7 +724,7 @@ except InsufficientSpotCapacity:
        spec:
          containers:
            - name: demo-app
-             image: <account-id>.dkr.ecr.us-east-1.amazonaws.com/smartscale-demo-app:latest
+             image: <account-id>.dkr.ecr.us-east-1.amazonaws.com/node-fleet-demo-app:latest
              ports:
                - containerPort: 3000
              resources:
@@ -921,7 +921,7 @@ const workerLaunchTemplate = new aws.ec2.LaunchTemplate("k3s-worker", {
 ```typescript
 const schedulerRule = new aws.cloudwatch.EventRule("autoscaler-trigger", {
     scheduleExpression: "rate(2 minutes)",
-    description: "Trigger SmartScale autoscaler every 2 minutes",
+    description: "Trigger node-fleet autoscaler every 2 minutes",
 });
 
 new aws.cloudwatch.EventTarget("lambda-target", {
@@ -940,8 +940,8 @@ new aws.lambda.Permission("allow-eventbridge", {
 **SNS Topic for Alerts**:
 
 ```typescript
-const alertTopic = new aws.sns.Topic("smartscale-alerts", {
-  displayName: "SmartScale Autoscaler Alerts",
+const alertTopic = new aws.sns.Topic("node-fleet-alerts", {
+  displayName: "node-fleet Autoscaler Alerts",
 });
 
 // Email subscription
@@ -969,7 +969,7 @@ new aws.sns.TopicSubscription("slack-forwarder", {
 **ECR Repository**:
 
 ```typescript
-const demoAppRepo = new aws.ecr.Repository("smartscale-demo-app", {
+const demoAppRepo = new aws.ecr.Repository("node-fleet-demo-app", {
   imageScanningConfiguration: {
     scanOnPush: true,
   },
@@ -1009,7 +1009,7 @@ new aws.ecr.LifecyclePolicy("demo-app-lifecycle", {
         resourceType: "instance",
         tags: {
             Name: "k3s-worker",
-            Project: "SmartScale",
+            Project: "node-fleet",
             ManagedBy: "Lambda",
         },
     }],
@@ -1021,7 +1021,7 @@ new aws.ecr.LifecyclePolicy("demo-app-lifecycle", {
 
 **Lambda Function**:
 ```typescript
-const autoscalerLambda = new aws.lambda.Function("smartscale-autoscaler", {
+const autoscalerLambda = new aws.lambda.Function("node-fleet-autoscaler", {
     runtime: aws.lambda.Runtime.Python3d11,
     handler: "autoscaler.handler",
     code: new pulumi.asset.AssetArchive({
@@ -1102,7 +1102,7 @@ export const demoAppUrl = pulumi.interpolate`http://${masterInstance.publicIp}:3
 ```bash
 cd pulumi
 npm install
-pulumi stack init smartscale-prod
+pulumi stack init node-fleet-prod
 pulumi config set aws:region us-east-1
 pulumi up  # Preview and deploy
 pulumi stack output masterPublicIp  # Get master IP for SSH
@@ -1208,7 +1208,7 @@ kubectl run cpu-burn --image=progrium/stress -- --cpu 2 --timeout 600s
 kubectl scale deployment cpu-burn --replicas=10
 
 echo "Monitoring autoscaler response..."
-watch -n 10 "kubectl get nodes; aws ec2 describe-instances --filters 'Name=tag:Project,Values=SmartScale' --query 'Reservations[*].Instances[*].[InstanceId,State.Name]'"
+watch -n 10 "kubectl get nodes; aws ec2 describe-instances --filters 'Name=tag:Project,Values=node-fleet' --query 'Reservations[*].Instances[*].[InstanceId,State.Name]'"
 
 # Expected: Within 3 minutes, new EC2 instances launch and join cluster
 ```
@@ -1226,7 +1226,7 @@ echo "Waiting for 10-minute cooldown + low CPU detection..."
 sleep 700  # 11 minutes
 
 echo "Checking for node termination..."
-watch -n 10 "kubectl get nodes; aws ec2 describe-instances --filters 'Name=tag:Project,Values=SmartScale'"
+watch -n 10 "kubectl get nodes; aws ec2 describe-instances --filters 'Name=tag:Project,Values=node-fleet'"
 
 # Expected: After 10+ minutes of CPU < 30%, one node drained and terminated
 ```
@@ -1816,22 +1816,22 @@ SELECT SUM(node_count * hourly_rate) FROM cloudwatch WHERE metric_name='EC2Cost'
 
 Before submission, ensure:
 
-GitHub repo has 15+ commits (one per session)
-README.md covers all required sections
-Architecture diagram shows all AWS services
-Lambda function code is clean, commented, tested
-Prometheus collecting metrics from all nodes
-Grafana dashboards visualize cluster health
-DynamoDB lock mechanism prevents race conditions
-Graceful drain tested (no pod disruptions)
-CloudWatch alarms configured for failures
-Slack notifications working for all event types
-k6 load test results documented
-Cost analysis shows 40-50% savings
-Security: Secrets Manager, IAM roles, encrypted volumes
-Pulumi IaC defines all infrastructure
-Demo rehearsed, presentation slides ready
-All bonus features documented (if implemented)
+- GitHub repo has 15+ commits (one per session)
+- README.md covers all required sections
+- Architecture diagram shows all AWS services
+- Lambda function code is clean, commented, tested
+- Prometheus collecting metrics from all nodes
+- Grafana dashboards visualize cluster health
+- DynamoDB lock mechanism prevents race conditions
+- Graceful drain tested (no pod disruptions)
+- CloudWatch alarms configured for failures
+- Slack notifications working for all event types
+- k6 load test results documented
+- Cost analysis shows 40-50% savings
+- Security: Secrets Manager, IAM roles, encrypted volumes
+- Pulumi IaC defines all infrastructure
+- Demo rehearsed, presentation slides ready
+- All bonus features documented (if implemented)
 
 ---
 
@@ -1860,7 +1860,7 @@ By completing this project, you will master:
 
 **Instructor Office Hours**: [Insert schedule]
 
-**Slack Channel**: #smartscale-autoscaler (for team collaboration)
+**Slack Channel**: #node-fleet-autoscaler (for team collaboration)
 
 **GitHub Issues**: Use for bug tracking and questions
 

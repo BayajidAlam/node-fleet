@@ -1,4 +1,4 @@
-# Quick Start: Testing SmartScale
+# Quick Start: Testing node-fleet
 
 ## Installation
 

@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Detailed Architecture
+# node-fleet K3s Autoscaler - Detailed Architecture
 
 ![System Architecture](diagrams/system_architecture.png)
 
@@ -24,7 +24,7 @@
 
 ## System Overview
 
-SmartScale is a serverless autoscaling system for K3s clusters on AWS that uses event-driven architecture to dynamically adjust cluster capacity based on real-time metrics.
+node-fleet is a serverless autoscaling system for K3s clusters on AWS that uses event-driven architecture to dynamically adjust cluster capacity based on real-time metrics.
 
 ### Architecture Principles
 
@@ -49,7 +49,7 @@ SmartScale is a serverless autoscaling system for K3s clusters on AWS that uses 
 
 ## Metrics Collection Architecture
 
-SmartScale uses **Prometheus as the unified metrics aggregator**, which collects data from two key sources:
+node-fleet uses **Prometheus as the unified metrics aggregator**, which collects data from two key sources:
 
 ![Metrics Architecture](diagrams/metrics_architecture.png)
 
@@ -881,7 +881,7 @@ Auto-configure Grafana data source and import 3 dashboards
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "cloudwatch:namespace": "SmartScale"
+          "cloudwatch:namespace": "node-fleet"
         }
       }
     }

@@ -102,7 +102,7 @@ function selectWeightedEndpoint(endpoints) {
 // Setup function - runs once before test
 export function setup() {
   console.log('='.repeat(60));
-  console.log('SmartScale K3s Autoscaler - Load Test');
+  console.log('node-fleet K3s Autoscaler - Load Test');
   console.log('='.repeat(60));
   console.log(`Target URL: ${BASE_URL}`);
   console.log(`Test Duration: ${TEST_DURATION}`);

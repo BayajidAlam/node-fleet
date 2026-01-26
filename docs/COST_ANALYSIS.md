@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Cost Analysis
+# node-fleet K3s Autoscaler - Cost Analysis
 
 ## Executive Summary
 
@@ -294,7 +294,7 @@ Tag all resources for cost tracking:
 # Tag EC2 instances
 aws ec2 create-tags \
   --resources <instance-ids> \
-  --tags Key=CostCenter,Value=Infrastructure Key=Project,Value=SmartScale \
+  --tags Key=CostCenter,Value=Infrastructure Key=Project,Value=node-fleet \
   --region ap-southeast-1
 
 # View costs by tag

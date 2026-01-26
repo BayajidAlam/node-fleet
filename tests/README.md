@@ -1,8 +1,8 @@
-# SmartScale K3s Autoscaler - Test Suite
+# node-fleet K3s Autoscaler - Test Suite
 
 ## Overview
 
-This directory contains TypeScript-based tests for the SmartScale K3s Autoscaler. While the Lambda function is implemented in Python, tests are written in TypeScript to maintain consistency with the Pulumi infrastructure code.
+This directory contains TypeScript-based tests for the node-fleet K3s Autoscaler. While the Lambda function is implemented in Python, tests are written in TypeScript to maintain consistency with the Pulumi infrastructure code.
 
 ## Technology Stack
 

@@ -1,7 +1,7 @@
 {
   "name": "node-fleet-infrastructure",
   "version": "1.0.0",
-  "description": "SmartScale K3s Autoscaler Infrastructure",
+  "description": "node-fleet K3s Autoscaler Infrastructure",
   "main": "index.ts",
   "scripts": {
     "build": "tsc",

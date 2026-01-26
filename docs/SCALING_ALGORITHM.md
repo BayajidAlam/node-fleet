@@ -1,4 +1,4 @@
-# SmartScale Scaling Algorithm
+# node-fleet Scaling Algorithm
 
 > **Critical: Node Count Semantics**
 >
@@ -22,7 +22,7 @@
 
 ## Algorithm Overview
 
-The SmartScale autoscaler uses a **hybrid three-layer decision engine** that evaluates cluster health every 2 minutes using reactive metrics, predictive analysis, and custom application metrics.
+The node-fleet autoscaler uses a **hybrid three-layer decision engine** that evaluates cluster health every 2 minutes using reactive metrics, predictive analysis, and custom application metrics.
 
 ### Core Principles
 

@@ -1,12 +1,12 @@
 #!/bin/bash
-# SmartScale K3s Autoscaler - Scale-Down Test
+# node-fleet K3s Autoscaler - Scale-Down Test
 # Removes load and monitors autoscaler scale-down after cooldown period
 # Expected: Nodes should be removed after 10 minutes of low CPU (< 30%)
 
 set -e
 
 echo "============================================================"
-echo "SmartScale K3s Autoscaler - Scale-Down Test"
+echo "node-fleet K3s Autoscaler - Scale-Down Test"
 echo "============================================================"
 echo ""
 
@@ -135,10 +135,10 @@ else
     echo "  5. Critical pods on worker nodes (prevents drain)"
     echo ""
     echo "Troubleshooting:"
-    echo "  1. Check CloudWatch logs: aws logs tail /aws/lambda/smartscale-autoscaler --follow"
+    echo "  1. Check CloudWatch logs: aws logs tail /aws/lambda/node-fleet-autoscaler --follow"
     echo "  2. Check cluster CPU: kubectl top nodes"
     echo "  3. Check pending pods: kubectl get pods --all-namespaces --field-selector=status.phase=Pending"
-    echo "  4. Review DynamoDB state: aws dynamodb get-item --table-name k3s-autoscaler-state --key '{\"cluster_id\":{\"S\":\"smartscale-prod\"}}'"
+    echo "  4. Review DynamoDB state: aws dynamodb get-item --table-name k3s-autoscaler-state --key '{\"cluster_id\":{\"S\":\"node-fleet-prod\"}}'"
 fi
 
 echo ""

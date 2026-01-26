@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Deployment Guide
+# node-fleet K3s Autoscaler - Deployment Guide
 
 ![GitOps Deployment Workflow](diagrams/gitops_workflow.png)
 
@@ -398,7 +398,7 @@ curl "http://$MASTER_IP:30090/api/v1/query?query=up" | jq '.'
 
 ```bash
 # List custom metrics
-aws cloudwatch list-metrics --namespace SmartScale --region ap-southeast-1
+aws cloudwatch list-metrics --namespace node-fleet --region ap-southeast-1
 
 # Expected metrics:
 # - AutoscalerInvocations
@@ -447,7 +447,7 @@ aws cloudwatch put-metric-alarm \
   --alarm-name node-fleet-cpu-critical \
   --alarm-description "Cluster CPU > 90% for 5 minutes" \
   --metric-name ClusterCPUUtilization \
-  --namespace SmartScale \
+  --namespace node-fleet \
   --statistic Average \
   --period 300 \
   --threshold 90 \
@@ -460,7 +460,7 @@ aws cloudwatch put-metric-alarm \
   --alarm-name node-fleet-scaling-failures \
   --alarm-description "3+ scaling failures in 15 minutes" \
   --metric-name ScalingFailures \
-  --namespace SmartScale \
+  --namespace node-fleet \
   --statistic Sum \
   --period 900 \
   --threshold 3 \

@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Troubleshooting Guide
+# node-fleet K3s Autoscaler - Troubleshooting Guide
 
 ## Table of Contents
 
@@ -32,7 +32,7 @@ aws dynamodb get-item --table-name node-fleet-dev-state --key '{"cluster_id": {"
 
 # Check CloudWatch metrics (last 5 min)
 aws cloudwatch get-metric-statistics \
-  --namespace SmartScale \
+  --namespace node-fleet \
   --metric-name CurrentNodeCount \
   --start-time $(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%S) \
   --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \

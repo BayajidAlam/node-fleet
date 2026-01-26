@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Solution Architecture
+# node-fleet K3s Autoscaler - Solution Architecture
 
 > **Document Status**: Final
 > **Version**: 1.0
@@ -111,9 +111,9 @@ Distributed locking prevents race conditions between Lambda invocations.
    - Cost Tracking (Bonus #7): Hourly spend estimations.
 
 2. **CloudWatch Custom Metrics**:
-   - `SmartScale/PendingPods`
-   - `SmartScale/ScaleUpEvents`
-   - `SmartScale/CostEstimates`
+   - `node-fleet/PendingPods`
+   - `node-fleet/ScaleUpEvents`
+   - `node-fleet/CostEstimates`
 
 3. **Slack Notifications** (Bonus #6):
    - Rich-text alerts for Scale Up/Down and Failures.

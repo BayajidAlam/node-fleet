@@ -1,7 +1,7 @@
 {
-  "name": "smartscale-tests",
+  "name": "node-fleet-tests",
   "version": "1.0.0",
-  "description": "TypeScript test suite for SmartScale K3s Autoscaler",
+  "description": "TypeScript test suite for node-fleet K3s Autoscaler",
   "scripts": {
     "test": "jest",
     "test:unit": "jest tests/unit",

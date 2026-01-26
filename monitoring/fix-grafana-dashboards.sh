@@ -101,11 +101,11 @@ import_dashboard() {
     
     echo "   • ${title}..."
     
-    # Update namespace from SmartScale to NodeFleet/Autoscaler in queries
+    # Update namespace from node-fleet to NodeFleet/Autoscaler in queries
     local updated_json=$(jq --arg uid "$DATASOURCE_UID" '
         .panels[]?.targets[]?.datasource = {"type": "cloudwatch", "uid": $uid} |
         .panels[]?.targets[]?.namespace = (
-            if .namespace == "SmartScale" then "NodeFleet/Autoscaler"
+            if .namespace == "node-fleet" then "NodeFleet/Autoscaler"
             elif .namespace == "AWS/Lambda" then "AWS/Lambda"
             elif .namespace == "AWS/EC2" then "AWS/EC2"
             else .namespace

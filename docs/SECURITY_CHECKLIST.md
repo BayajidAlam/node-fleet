@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler - Security Checklist
+# node-fleet K3s Autoscaler - Security Checklist
 
 ## Security Compliance Status: ✅ **PASSED**
 
@@ -26,7 +26,7 @@ All IAM roles follow AWS best practices - each role has minimum required permiss
 
 #### Lambda Execution Role
 
-**Policy**: `SmartScaleAutoscalerLambdaPolicy`
+**Policy**: `node-fleetAutoscalerLambdaPolicy`
 
 ```json
 {
@@ -45,7 +45,7 @@ All IAM roles follow AWS best practices - each role has minimum required permiss
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "ec2:ResourceTag/Project": "SmartScale"
+          "ec2:ResourceTag/Project": "node-fleet"
         }
       }
     },
@@ -58,19 +58,19 @@ All IAM roles follow AWS best practices - each role has minimum required permiss
         "dynamodb:UpdateItem",
         "dynamodb:DeleteItem"
       ],
-      "Resource": "arn:aws:dynamodb:ap-southeast-1:*:table/smartscale-state"
+      "Resource": "arn:aws:dynamodb:ap-southeast-1:*:table/node-fleet-state"
     },
     {
       "Sid": "SecretsManagerReadOnly",
       "Effect": "Allow",
       "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": "arn:aws:secretsmanager:ap-southeast-1:*:secret:smartscale/k3s-token-*"
+      "Resource": "arn:aws:secretsmanager:ap-southeast-1:*:secret:node-fleet/k3s-token-*"
     },
     {
       "Sid": "SNSNotifications",
       "Effect": "Allow",
       "Action": ["sns:Publish"],
-      "Resource": "arn:aws:sns:ap-southeast-1:*:smartscale-alerts"
+      "Resource": "arn:aws:sns:ap-southeast-1:*:node-fleet-alerts"
     },
     {
       "Sid": "CloudWatchLogsWrite",
@@ -80,7 +80,7 @@ All IAM roles follow AWS best practices - each role has minimum required permiss
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/lambda/smartscale-autoscaler:*"
+      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/lambda/node-fleet-autoscaler:*"
     }
   ]
 }
@@ -91,8 +91,8 @@ All IAM roles follow AWS best practices - each role has minimum required permiss
 ```bash
 # Check Lambda role has minimal permissions
 aws iam get-role-policy \
-  --role-name SmartScaleAutoscalerLambdaRole \
-  --policy-name SmartScaleAutoscalerLambdaPolicy \
+  --role-name node-fleetAutoscalerLambdaRole \
+  --policy-name node-fleetAutoscalerLambdaPolicy \
   --region ap-southeast-1
 
 # Verify no overly permissive wildcards
@@ -105,7 +105,7 @@ aws iam get-role-policy \
 
 #### EC2 Instance Role (K3s Nodes)
 
-**Policy**: `SmartScaleK3sNodePolicy`
+**Policy**: `node-fleetK3sNodePolicy`
 
 ```json
 {
@@ -126,7 +126,7 @@ aws iam get-role-policy \
       "Sid": "SecretsManagerK3sToken",
       "Effect": "Allow",
       "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": "arn:aws:secretsmanager:ap-southeast-1:*:secret:smartscale/k3s-token-*"
+      "Resource": "arn:aws:secretsmanager:ap-southeast-1:*:secret:node-fleet/k3s-token-*"
     },
     {
       "Sid": "CloudWatchMetrics",
@@ -135,7 +135,7 @@ aws iam get-role-policy \
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "cloudwatch:namespace": "SmartScale"
+          "cloudwatch:namespace": "node-fleet"
         }
       }
     },
@@ -154,11 +154,11 @@ aws iam get-role-policy \
 ```bash
 # Check EC2 instance role
 aws iam get-role-policy \
-  --role-name SmartScaleK3sNodeRole \
-  --policy-name SmartScaleK3sNodePolicy \
+  --role-name node-fleetK3sNodeRole \
+  --policy-name node-fleetK3sNodePolicy \
   --region ap-southeast-1
 
-# Verify nodes can only write to SmartScale namespace in CloudWatch
+# Verify nodes can only write to node-fleet namespace in CloudWatch
 ```
 
 ✅ **Status**: Nodes cannot launch/terminate instances or access other secrets
@@ -247,7 +247,7 @@ done
 
 ```bash
 # Check VPC configuration
-aws ec2 describe-vpcs --filters "Name=tag:Project,Values=SmartScale" \
+aws ec2 describe-vpcs --filters "Name=tag:Project,Values=node-fleet" \
   --query 'Vpcs[*].[VpcId,CidrBlock]' --output table --region ap-southeast-1
 
 # Verify subnets
@@ -282,7 +282,7 @@ aws ec2 describe-subnets --filters "Name=vpc-id,Values=<vpc-id>" \
 ```bash
 # Check master security group
 aws ec2 describe-security-groups \
-  --filters "Name=tag:Name,Values=smartscale-master-sg" \
+  --filters "Name=tag:Name,Values=node-fleet-master-sg" \
   --query 'SecurityGroups[*].IpPermissions[*].[IpProtocol,FromPort,ToPort,IpRanges]' \
   --output table --region ap-southeast-1
 
@@ -309,7 +309,7 @@ aws ec2 describe-security-groups \
 ```bash
 # Check worker security group
 aws ec2 describe-security-groups \
-  --filters "Name=tag:Name,Values=smartscale-worker-sg" \
+  --filters "Name=tag:Name,Values=node-fleet-worker-sg" \
   --query 'SecurityGroups[*].IpPermissions[*].[IpProtocol,FromPort,ToPort,IpRanges]' \
   --output table --region ap-southeast-1
 
@@ -336,7 +336,7 @@ aws ec2 describe-security-groups \
 ```bash
 # Lambda should be in VPC to reach Prometheus
 aws lambda get-function-configuration \
-  --function-name smartscale-autoscaler \
+  --function-name node-fleet-autoscaler \
   --query 'VpcConfig' --region ap-southeast-1
 
 # Should return SubnetIds and SecurityGroupIds
@@ -381,7 +381,7 @@ master_volume = aws.ec2.Volume("master-volume",
     type="gp3",
     encrypted=True,  # ✅ Encryption enabled
     kms_key_id="alias/aws/ebs",
-    tags={"Name": "smartscale-master-root"}
+    tags={"Name": "node-fleet-master-root"}
 )
 ```
 
@@ -390,7 +390,7 @@ master_volume = aws.ec2.Volume("master-volume",
 ```bash
 # Check all volumes are encrypted
 aws ec2 describe-volumes \
-  --filters "Name=tag:Project,Values=SmartScale" \
+  --filters "Name=tag:Project,Values=node-fleet" \
   --query 'Volumes[*].[VolumeId,Encrypted,KmsKeyId]' \
   --output table --region ap-southeast-1
 
@@ -409,10 +409,10 @@ K3s join token encrypted with AWS managed key (aws/secretsmanager).
 
 ```python
 k3s_token_secret = aws.secretsmanager.Secret("k3s-token",
-    name="smartscale/k3s-token",
+    name="node-fleet/k3s-token",
     kms_key_id="alias/aws/secretsmanager",  # ✅ Encryption enabled
     recovery_window_in_days=7,
-    tags={"Project": "SmartScale"}
+    tags={"Project": "node-fleet"}
 )
 ```
 
@@ -421,7 +421,7 @@ k3s_token_secret = aws.secretsmanager.Secret("k3s-token",
 ```bash
 # Check secret encryption
 aws secretsmanager describe-secret \
-  --secret-id smartscale/k3s-token \
+  --secret-id node-fleet/k3s-token \
   --query '[Name,KmsKeyId]' --output table --region ap-southeast-1
 
 # KmsKeyId should show ARN of aws/secretsmanager key
@@ -438,8 +438,8 @@ State table encrypted with AWS owned key (default encryption).
 **Pulumi Code** (pulumi/dynamodb.py):
 
 ```python
-state_table = aws.dynamodb.Table("smartscale-state",
-    name="smartscale-state",
+state_table = aws.dynamodb.Table("node-fleet-state",
+    name="node-fleet-state",
     billing_mode="PAY_PER_REQUEST",
     hash_key="cluster_id",
     attributes=[{"name": "cluster_id", "type": "S"}],
@@ -448,7 +448,7 @@ state_table = aws.dynamodb.Table("smartscale-state",
         "kms_key_arn": None  # Uses AWS owned key (no cost)
     },
     point_in_time_recovery={"enabled": True},
-    tags={"Project": "SmartScale"}
+    tags={"Project": "node-fleet"}
 )
 ```
 
@@ -456,7 +456,7 @@ state_table = aws.dynamodb.Table("smartscale-state",
 
 ```bash
 # Check DynamoDB encryption
-aws dynamodb describe-table --table-name smartscale-state \
+aws dynamodb describe-table --table-name node-fleet-state \
   --query 'Table.SSEDescription' --output table --region ap-southeast-1
 
 # Status should be "ENABLED"
@@ -529,7 +529,7 @@ K3s token rotated every 90 days (manual process documented).
 
    ```bash
    aws secretsmanager update-secret \
-     --secret-id smartscale/k3s-token \
+     --secret-id node-fleet/k3s-token \
      --secret-string "$NEW_TOKEN" \
      --region ap-southeast-1
    ```
@@ -546,7 +546,7 @@ K3s token rotated every 90 days (manual process documented).
 ```bash
 # Check secret last updated date
 aws secretsmanager describe-secret \
-  --secret-id smartscale/k3s-token \
+  --secret-id node-fleet/k3s-token \
   --query 'LastChangedDate' --output text --region ap-southeast-1
 
 # Should be within last 90 days
@@ -565,7 +565,7 @@ All secret retrievals logged to CloudTrail.
 ```bash
 # Check CloudTrail for secret access
 aws cloudtrail lookup-events \
-  --lookup-attributes AttributeKey=ResourceName,AttributeValue=smartscale/k3s-token \
+  --lookup-attributes AttributeKey=ResourceName,AttributeValue=node-fleet/k3s-token \
   --max-results 10 --region ap-southeast-1
 
 # Should show GetSecretValue events from Lambda and EC2 instances
@@ -585,7 +585,7 @@ aws cloudtrail lookup-events \
 
 ```bash
 # Check EC2 key pair age
-aws ec2 describe-key-pairs --filters "Name=tag:Project,Values=SmartScale" \
+aws ec2 describe-key-pairs --filters "Name=tag:Project,Values=node-fleet" \
   --query 'KeyPairs[*].[KeyName,CreateTime]' --output table --region ap-southeast-1
 
 # CreateTime should be within last 180 days
@@ -599,7 +599,7 @@ aws ec2 describe-key-pairs --filters "Name=tag:Project,Values=SmartScale" \
 
 ### ✅ Kubernetes RBAC
 
-**Service Account**: `smartscale-autoscaler` (for kubectl operations from Lambda)
+**Service Account**: `node-fleet-autoscaler` (for kubectl operations from Lambda)
 
 **Role Binding** (k3s/rbac.yaml):
 
@@ -607,13 +607,13 @@ aws ec2 describe-key-pairs --filters "Name=tag:Project,Values=SmartScale" \
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: smartscale-autoscaler
+  name: node-fleet-autoscaler
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: smartscale-autoscaler-role
+  name: node-fleet-autoscaler-role
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
@@ -628,14 +628,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: smartscale-autoscaler-binding
+  name: node-fleet-autoscaler-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: smartscale-autoscaler-role
+  name: node-fleet-autoscaler-role
 subjects:
   - kind: ServiceAccount
-    name: smartscale-autoscaler
+    name: node-fleet-autoscaler
     namespace: kube-system
 ```
 
@@ -643,10 +643,10 @@ subjects:
 
 ```bash
 # Check service account permissions
-kubectl auth can-i delete nodes --as=system:serviceaccount:kube-system:smartscale-autoscaler
+kubectl auth can-i delete nodes --as=system:serviceaccount:kube-system:node-fleet-autoscaler
 # yes
 
-kubectl auth can-i delete deployments --as=system:serviceaccount:kube-system:smartscale-autoscaler
+kubectl auth can-i delete deployments --as=system:serviceaccount:kube-system:node-fleet-autoscaler
 # no ✅ (cannot manage deployments)
 ```
 
@@ -778,31 +778,31 @@ Run this script before production deployment:
 #!/bin/bash
 # security-audit.sh
 
-echo "🔒 SmartScale Security Audit"
+echo "🔒 node-fleet Security Audit"
 echo "=============================="
 
 # 1. Check IAM roles
 echo "✅ Checking IAM roles..."
-aws iam get-role --role-name SmartScaleAutoscalerLambdaRole > /dev/null 2>&1 && echo "  Lambda role exists" || echo "  ❌ Lambda role missing"
-aws iam get-role --role-name SmartScaleK3sNodeRole > /dev/null 2>&1 && echo "  EC2 role exists" || echo "  ❌ EC2 role missing"
+aws iam get-role --role-name node-fleetAutoscalerLambdaRole > /dev/null 2>&1 && echo "  Lambda role exists" || echo "  ❌ Lambda role missing"
+aws iam get-role --role-name node-fleetK3sNodeRole > /dev/null 2>&1 && echo "  EC2 role exists" || echo "  ❌ EC2 role missing"
 
 # 2. Check encryption
 echo "✅ Checking encryption..."
-EBS_ENCRYPTED=$(aws ec2 describe-volumes --filters "Name=tag:Project,Values=SmartScale" --query 'Volumes[?Encrypted==`false`] | length(@)' --output text --region ap-southeast-1)
+EBS_ENCRYPTED=$(aws ec2 describe-volumes --filters "Name=tag:Project,Values=node-fleet" --query 'Volumes[?Encrypted==`false`] | length(@)' --output text --region ap-southeast-1)
 [[ "$EBS_ENCRYPTED" == "0" ]] && echo "  All EBS volumes encrypted" || echo "  ❌ $EBS_ENCRYPTED unencrypted volumes found"
 
 # 3. Check security groups
 echo "✅ Checking security groups..."
-OPEN_SSH=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=SmartScale" --query 'SecurityGroups[?IpPermissions[?IpRanges[?CidrIp==`0.0.0.0/0`] && FromPort==`22`]] | length(@)' --output text --region ap-southeast-1)
+OPEN_SSH=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=node-fleet" --query 'SecurityGroups[?IpPermissions[?IpRanges[?CidrIp==`0.0.0.0/0`] && FromPort==`22`]] | length(@)' --output text --region ap-southeast-1)
 [[ "$OPEN_SSH" == "0" ]] && echo "  No SSH open to internet" || echo "  ⚠️  SSH exposed to internet"
 
 # 4. Check secrets
 echo "✅ Checking secrets..."
-aws secretsmanager describe-secret --secret-id smartscale/k3s-token > /dev/null 2>&1 && echo "  K3s token in Secrets Manager" || echo "  ❌ K3s token not found"
+aws secretsmanager describe-secret --secret-id node-fleet/k3s-token > /dev/null 2>&1 && echo "  K3s token in Secrets Manager" || echo "  ❌ K3s token not found"
 
 # 5. Check CloudTrail
 echo "✅ Checking CloudTrail..."
-TRAIL_ACTIVE=$(aws cloudtrail get-trail-status --name smartscale-trail --query 'IsLogging' --output text --region ap-southeast-1)
+TRAIL_ACTIVE=$(aws cloudtrail get-trail-status --name node-fleet-trail --query 'IsLogging' --output text --region ap-southeast-1)
 [[ "$TRAIL_ACTIVE" == "true" ]] && echo "  CloudTrail logging active" || echo "  ❌ CloudTrail not enabled"
 
 # 6. Check MFA
@@ -870,7 +870,7 @@ chmod +x scripts/security-audit.sh
 ```bash
 # 1. Identify unauthorized instances
 aws ec2 describe-instances \
-  --filters "Name=tag:Project,Values=!SmartScale" "Name=instance-state-name,Values=running" \
+  --filters "Name=tag:Project,Values=!node-fleet" "Name=instance-state-name,Values=running" \
   --query 'Reservations[*].Instances[*].[InstanceId,LaunchTime]' \
   --output table --region ap-southeast-1
 

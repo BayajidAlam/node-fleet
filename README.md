@@ -1,4 +1,4 @@
-# SmartScale K3s Autoscaler
+# node-fleet K3s Autoscaler
 
 ![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
@@ -37,7 +37,7 @@ _Reduce infrastructure costs by 40-50% through intelligent, event-driven autosca
 
 ### Our Solution
 
-SmartScale is an **intelligent, serverless autoscaler** for K3s clusters that:
+node-fleet is an **intelligent, serverless autoscaler** for K3s clusters that:
 
 - ✅ **Scales automatically** in under 3 minutes (vs. 15-20 min manual)
 - ✅ **Reduces costs by 40-50%** through dynamic right-sizing
@@ -325,6 +325,8 @@ Demo app responding (`curl http://master-ip:30080/health`)
 ---
 
 ## 🧪 Testing
+
+For a comprehensive breakdown of all 120 verified tests and detailed testing guidelines, please see the **[Testing Strategy & Verification Summary](docs/TESTING.md)** report.
 
 ### Unit Tests
 

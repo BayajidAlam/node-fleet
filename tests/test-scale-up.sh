@@ -1,12 +1,12 @@
 #!/bin/bash
-# SmartScale K3s Autoscaler - Scale-Up Test
+# node-fleet K3s Autoscaler - Scale-Up Test
 # Simulates high CPU load to trigger autoscaler scale-up event
 # Expected: New nodes should join cluster within 3 minutes
 
 set -e
 
 echo "============================================================"
-echo "SmartScale K3s Autoscaler - Scale-Up Test"
+echo "node-fleet K3s Autoscaler - Scale-Up Test"
 echo "============================================================"
 echo ""
 
@@ -158,7 +158,7 @@ else
     echo -e "${RED}✗ TEST FAILED: No scale-up detected within 5 minutes${NC}"
     echo ""
     echo "Troubleshooting:"
-    echo "  1. Check CloudWatch logs: /aws/lambda/smartscale-autoscaler"
+    echo "  1. Check CloudWatch logs: /aws/lambda/node-fleet-autoscaler"
     echo "  2. Verify Prometheus metrics: kubectl port-forward -n monitoring svc/prometheus 9090:9090"
     echo "  3. Check DynamoDB state table for lock issues"
     echo "  4. Verify Lambda EventBridge trigger is active"

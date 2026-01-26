@@ -9,7 +9,7 @@ SSH_KEY="node-fleet-key.pem"
 MAX_RETRIES=20
 RETRY_DELAY=30
 
-echo "=== SmartScale K3s Automated Deployment ==="
+echo "=== node-fleet K3s Automated Deployment ==="
 echo "Master IP: $MASTER_IP"
 echo ""
 

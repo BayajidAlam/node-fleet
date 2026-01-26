@@ -186,15 +186,15 @@ def analyze_and_recommend(current_metrics: Dict, current_nodes: int) -> Dict:
 
 ```python
 # Published every 2 minutes
-SmartScale/AutoscalerInvocations    # Invocation count
-SmartScale/CurrentNodeCount         # Real-time node count
-SmartScale/ClusterCPUUtilization    # Avg cluster CPU
-SmartScale/ClusterMemoryUtilization # Avg cluster memory
-SmartScale/PendingPods              # Unscheduled pods
-SmartScale/ScaleUpEvents            # Scale-up count
-SmartScale/ScaleDownEvents          # Scale-down count
-SmartScale/NodeJoinLatency          # EC2 launch → k8s Ready time (ms)
-SmartScale/ScalingFailures          # Errors (with ErrorType dimension)
+node-fleet/AutoscalerInvocations    # Invocation count
+node-fleet/CurrentNodeCount         # Real-time node count
+node-fleet/ClusterCPUUtilization    # Avg cluster CPU
+node-fleet/ClusterMemoryUtilization # Avg cluster memory
+node-fleet/PendingPods              # Unscheduled pods
+node-fleet/ScaleUpEvents            # Scale-up count
+node-fleet/ScaleDownEvents          # Scale-down count
+node-fleet/NodeJoinLatency          # EC2 launch → k8s Ready time (ms)
+node-fleet/ScalingFailures          # Errors (with ErrorType dimension)
 ````
 
 #### Slack Notifications (Structured Format)

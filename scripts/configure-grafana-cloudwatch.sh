@@ -89,7 +89,7 @@ for dashboard_file in ${DASHBOARD_DIR}/*.json; do
         walk(
             if type == "object" and has("namespace") then
                 .namespace = (
-                    if .namespace == "SmartScale" then "NodeFleet/Autoscaler"
+                    if .namespace == "node-fleet" then "NodeFleet/Autoscaler"
                     else .namespace
                     end
                 ) |
