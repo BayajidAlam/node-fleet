@@ -1,5 +1,6 @@
 {
   "title": "Node-Fleet Cost Dashboard",
+  "uid": "cost-tracking",
   "tags": [
     "cost",
     "aws",
@@ -22,7 +23,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"})",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
           "refId": "A"
         }
       ],
@@ -45,7 +46,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"}) * 24",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 24",
           "refId": "A"
         }
       ],
@@ -68,7 +69,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"}) * 730",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 730",
           "refId": "A"
         }
       ],
@@ -108,7 +109,7 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"}) / (0.0416 * 10))) * 100",
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0416 * 10))) * 100",
           "refId": "A"
         }
       ],
@@ -131,7 +132,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"})",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
           "legendFormat": "Current Cost/Hour",
           "refId": "A"
         },
@@ -163,7 +164,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (instance_type) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"})",
+          "expr": "sum by (instance_type) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
           "format": "time_series",
           "refId": "A"
         }
@@ -186,7 +187,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"})",
+          "expr": "sum by (lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
           "format": "time_series",
           "refId": "A"
         }

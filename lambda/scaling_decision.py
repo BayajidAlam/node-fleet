@@ -61,13 +61,18 @@ class ScalingDecision:
                 "reason": f"Enforcing minimum node count ({self.min_nodes})"
             }
         
-        # 1. Evaluate SCALE UP conditions (3-minute sustained load)
-        scale_up_reasons = []
+        # 0.5 Enforce Maximum Node Count
+        if self.current_nodes >= self.max_nodes:
+            logger.info(f"At or above max capacity ({self.current_nodes}/{self.max_nodes}). Skipping scale-up check.")
+            # Still evaluate scale-down below
+        else:
+            # 1. Evaluate SCALE UP conditions (3-minute sustained load)
+            scale_up_reasons = []
         
         # Check if CPU/Mem/Pending exceeds threshold for at least 2 consecutive readings (covering ~3-4 mins)
-        sustained_cpu = self._is_sustained_above(cpu, history, 'cpu_usage', CPU_SCALE_UP_THRESHOLD, window=2)
-        sustained_memory = self._is_sustained_above(memory, history, 'memory_usage', MEMORY_SCALE_UP_THRESHOLD, window=2)
-        sustained_pending = self._is_sustained_above(pending_pods, history, 'pending_pods', 0, window=2)
+        sustained_cpu = self._is_sustained_above(cpu, history, 'cpu_usage', CPU_SCALE_UP_THRESHOLD, window=3)
+        sustained_memory = self._is_sustained_above(memory, history, 'memory_usage', MEMORY_SCALE_UP_THRESHOLD, window=3)
+        sustained_pending = self._is_sustained_above(pending_pods, history, 'pending_pods', 0, window=3)
 
         if sustained_cpu:
             scale_up_reasons.append(f"CPU sustained > {CPU_SCALE_UP_THRESHOLD}%")
@@ -111,7 +116,7 @@ class ScalingDecision:
                 'memory_usage': MEMORY_SCALE_DOWN_THRESHOLD,
                 'pending_pods': 1 # Must be < 1
             },
-            window=5
+            window=10
         )
         
         if sustained_low_util:

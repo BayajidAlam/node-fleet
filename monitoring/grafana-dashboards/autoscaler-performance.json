@@ -1,5 +1,6 @@
 {
   "title": "Autoscaler Performance",
+  "uid": "autoscaler-performance",
   "tags": ["autoscaler", "lambda", "performance", "node-fleet"],
   "timezone": "browser",
   "schemaVersion": 16,
@@ -21,7 +22,7 @@
           "namespace": "AWS/Lambda",
           "metricName": "Duration",
           "dimensions": {
-            "FunctionName": "node-fleet-dev-autoscaler"
+            "FunctionName": "node-fleet-autoscaler"
           },
           "statistics": ["Average", "p50", "p95", "p99"],
           "refId": "A"
@@ -55,7 +56,7 @@
           "namespace": "AWS/Lambda",
           "metricName": "Invocations",
           "dimensions": {
-            "FunctionName": "node-fleet-dev-autoscaler"
+            "FunctionName": "node-fleet-autoscaler"
           },
           "statistics": ["Sum"],
           "refId": "A"
@@ -100,7 +101,7 @@
       },
       "targets": [
         {
-          "namespace": "NodeFleet/Autoscaler",
+          "namespace": "node-fleet",
           "metricName": "ScaleUpEvents",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -110,7 +111,7 @@
           "type": "cloudwatch"
         },
         {
-          "namespace": "NodeFleet/Autoscaler",
+          "namespace": "node-fleet",
           "metricName": "ScaleDownEvents",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -120,7 +121,7 @@
           "type": "cloudwatch"
         },
         {
-          "namespace": "NodeFleet/Autoscaler",
+          "namespace": "node-fleet",
           "metricName": "NoActionEvents",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -151,7 +152,7 @@
       },
       "targets": [
         {
-          "namespace": "NodeFleet/Autoscaler",
+          "namespace": "node-fleet",
           "metricName": "NodeJoinLatency",
           "dimensions": {},
           "statistics": ["Average", "p50", "p95", "p99", "Maximum"],
@@ -188,7 +189,7 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet-dev\"}) / (0.0416 * 10))) * 100",
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0416 * 10))) * 100",
           "refId": "A",
           "legendFormat": "Savings vs Always-On"
         }
@@ -241,13 +242,13 @@
           "namespace": "AWS/Lambda",
           "metricName": "Errors",
           "dimensions": {
-            "FunctionName": "node-fleet-dev-autoscaler"
+            "FunctionName": "node-fleet-autoscaler"
           },
           "statistics": ["Sum"],
           "refId": "A"
         },
         {
-          "namespace": "NodeFleet/Autoscaler",
+          "namespace": "node-fleet",
           "metricName": "ScalingFailures",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -276,7 +277,7 @@
       },
       "targets": [
         {
-          "namespace": "NodeFleet/Autoscaler",
+          "namespace": "node-fleet",
           "metricName": "CurrentNodeCount",
           "dimensions": {},
           "statistics": ["Average"],

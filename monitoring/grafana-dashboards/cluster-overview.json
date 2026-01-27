@@ -1,5 +1,6 @@
 {
   "title": "Cluster Overview",
+  "uid": "cluster-overview",
   "tags": ["kubernetes", "cluster", "node-fleet"],
   "timezone": "browser",
   "schemaVersion": 16,
@@ -247,12 +248,12 @@
       },
       "targets": [
         {
-          "expr": "increase(autoscaler_scale_up_total[5m])",
+          "expr": "clamp_min(delta(count(kube_node_info)[5m:1m]), 0)",
           "legendFormat": "Scale Up Events",
           "refId": "A"
         },
         {
-          "expr": "increase(autoscaler_scale_down_total[5m])",
+          "expr": "abs(clamp_max(delta(count(kube_node_info)[5m:1m]), 0))",
           "legendFormat": "Scale Down Events",
           "refId": "B"
         }

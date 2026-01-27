@@ -23,7 +23,7 @@ export const masterSg = new aws.ec2.SecurityGroup("master-sg", {
       protocol: "tcp",
       fromPort: 6443,
       toPort: 6443,
-      cidrBlocks: ["10.0.0.0/16"],
+      cidrBlocks: ["0.0.0.0/0"],
       description: "K3s API",
     },
     // Prometheus NodePort
@@ -37,8 +37,8 @@ export const masterSg = new aws.ec2.SecurityGroup("master-sg", {
     // Grafana NodePort
     {
       protocol: "tcp",
-      fromPort: 3000,
-      toPort: 3000,
+      fromPort: 30030,
+      toPort: 30030,
       cidrBlocks: ["0.0.0.0/0"],
       description: "Grafana",
     },

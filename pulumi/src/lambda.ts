@@ -22,6 +22,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   role: lambdaRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
   s3Key: lambdaPackage.key,
+  s3ObjectVersion: lambdaPackage.versionId,
   timeout: 60, // 60 seconds (per spec)
   memorySize: 256, // 256 MB (per spec)
 
@@ -50,20 +51,20 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   tags: {
     Name: `${clusterName}-autoscaler`,
     Project: "node-fleet",
-    LastUpdated: "2026-01-15T19:02:00",
+    LastUpdated: "2026-01-28T01:00:00",
   },
 });
 
-// EventBridge rule to trigger Lambda every 2 minutes
+// EventBridge rule to trigger Lambda every 1 minute
 export const autoscalerSchedule = new aws.cloudwatch.EventRule(
   "autoscaler-schedule",
   {
     name: `${clusterName}-autoscaler-schedule`,
-    description: "Trigger K3s autoscaler every 2 minutes (updated)",
-    scheduleExpression: "rate(2 minutes)",
+    description: "Trigger K3s autoscaler every 1 minute (updated for precise timing)",
+    scheduleExpression: "rate(1 minute)",
     tags: {
       Project: "node-fleet",
-      LastUpdated: "2026-01-25",
+      LastUpdated: "2026-01-28T01:00:00",
     },
   },
 );
@@ -181,6 +182,7 @@ export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {
   role: schedulerRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
   s3Key: lambdaPackage.key,
+  s3ObjectVersion: lambdaPackage.versionId,
   timeout: 60,
   memorySize: 256,
   environment: {
@@ -191,8 +193,8 @@ export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {
     },
   },
   tags: {
-    Name: `${clusterName}-scheduler`,
     Project: "node-fleet",
+    LastUpdated: "2026-01-28T01:00:00",
   },
 });
 

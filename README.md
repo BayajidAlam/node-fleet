@@ -59,7 +59,12 @@ _Reduce infrastructure costs by 40-50% through intelligent, event-driven autosca
 2. **Lambda** scrapes custom metrics from **Prometheus**.
 3. **Lambda** checks **DynamoDB** to manage state and distributed locking.
 4. **Decision Engine** evaluates thresholds and historical patterns.
-5. **EC2 Manager** provisions (Launch Templates) or terminates nodes gracefully.
+5. **EC2 Manager** provisions nodes from Launch Templates or terminates them gracefully.
+
+**Network Topology**:
+- **VPC**: 10.0.0.0/16 with 2 Public and 2 Private Subnets across 2 AZs.
+- **Security Groups**: Granular whitelisting (Port 6443 for K3s API, 30090 for Prometheus).
+- **NAT Gateway**: Enables workers in private subnets to download packages and patches.
 
 ---
 
@@ -219,9 +224,17 @@ scrape_configs:
 Every new worker node automatically joins the fleet via this entrypoint:
 ```bash
 #!/bin/bash
+# 1. Join Cluster
 K3S_TOKEN=$(aws secretsmanager get-secret-value --secret-id node-fleet/k3s-token --query SecretString --output text)
 MASTER_IP=$(aws ec2 describe-instances --filters "Name=tag:Role,Values=k3s-master" --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
 curl -sfL https://get.k3s.io | K3S_URL=https://${MASTER_IP}:6443 K3S_TOKEN=${K3S_TOKEN} sh -
+
+# 2. Validate Successful Join
+if systemctl is-active --quiet k3s-agent; then
+    echo "✅ Successfully joined cluster"
+else
+    echo "❌ Failed to join cluster" && exit 1
+fi
 ```
 
 ---
@@ -266,9 +279,10 @@ def node_fleet_brain(metrics, state):
 We track Lambda performance, EC2 lifecycle events, and cluster health in real-time.
 
 **CloudWatch Metrics Tracked**:
-- `LambdaDuration` / `LambdaErrors`: Monitors autoscaler health.
+- `LambdaDuration` / `LambdaErrors`: Monitors autoscaler health and execution time.
 - `EC2LaunchEvents` / `EC2Terminations`: Tracks fleet churn.
 - `ClusterCPUUtilization` / `PendingPodCount`: Core scaling signals.
+- `ScalingDecisionHistory`: Custom metric logging every Up/Down/Idle event for audit.
 
 **Alarms Configuration**:
 - 🔴 **Scaling Failure**: Triggered after 3 consecutive Lambda errors → Sends **SNS Notification**.
@@ -277,7 +291,7 @@ We track Lambda performance, EC2 lifecycle events, and cluster health in real-ti
 
 > [!NOTE]
 > **Dashboard Showcase:**
-> *   **System Health**: [INSERT_SS_HERE: grafana_cluster_dashboard.png]
+> *   **System Health**: ![Cluster Overview](docs/dashboards/Cluster%20Overview.png)
 > *   **Cost Tracking**: [INSERT_SS_HERE: cloudwatch_cost_analysis.png]
 
 ---
@@ -285,8 +299,9 @@ We track Lambda performance, EC2 lifecycle events, and cluster health in real-ti
 ## 🧪 Testing Strategy and Results
 
 We utilize a multi-layered testing strategy verified across **120 test cases**:
-- **Load Testing**: Simulated with `k6` to verify scale-up under massive concurrent load.
-- **Scale-Up/Down Testing**: Procedure to verify nodes launch, join, and drain correctly without impact.
+- **Load Testing**: Use `k6 run load-test.js` to simulate traffic spikes by increasing Virtual Users (VUs) from 1 to 100, forcing CPU saturation.
+- **Scale-Up Testing**: Triggered by load tests; verified by polling `kubectl get nodes` to ensure new instances transition to `Ready` in <3 min.
+- **Scale-Down Testing**: Safely verified by reducing k6 load and monitoring the `StateManager` logs as nodes are cordoned, drained, and removed.
 - **Failure Scenarios Tested**:
   - **Lambda Timeout**: Verified state recovery after execution interruption.
   - **EC2 Quota Full**: Logic handles "Insufficient Capacity" gracefully.

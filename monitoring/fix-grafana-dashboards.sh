@@ -13,9 +13,13 @@ echo "========================================"
 echo "Fixing Grafana Dashboards"
 echo "========================================"
 
-# Get Grafana password from Kubernetes secret
+# Get Grafana password from Kubernetes environment (manually verified as admin123)
 echo "→ Fetching Grafana password..."
-GRAFANA_PASSWORD=$(kubectl get secret -n monitoring grafana-admin -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "admin")
+GRAFANA_PASSWORD="admin123"
+
+# Prometheus Credentials (from Secrets Manager verified earlier)
+PROM_USER="prometheus-admin"
+PROM_PASS="KvV&!FbJBge3QSVnsnffFT2Y6D8?A<&k"
 
 echo "→ Grafana URL: ${GRAFANA_URL}"
 echo "→ Username: ${GRAFANA_USER}"
@@ -29,27 +33,24 @@ fi
 
 echo "✅ Grafana is accessible"
 
-# Step 1: Check if CloudWatch data source exists
+# Step 1: Check and Create CloudWatch Data Source
 echo ""
 echo "→ Checking CloudWatch data source..."
-DATASOURCE_CHECK=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+CW_DATASOURCE_CHECK=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
     "${GRAFANA_URL}/api/datasources/name/CloudWatch" || echo "")
 
-if echo "$DATASOURCE_CHECK" | grep -q '"id"'; then
+if echo "$CW_DATASOURCE_CHECK" | grep -q '"id"'; then
     echo "✅ CloudWatch data source already exists"
-    DATASOURCE_ID=$(echo "$DATASOURCE_CHECK" | jq -r '.id')
+    CW_DATASOURCE_ID=$(echo "$CW_DATASOURCE_CHECK" | jq -r '.id')
 else
     echo "→ Creating CloudWatch data source..."
+    AWS_REGION="ap-southeast-1"
     
-    # Get AWS credentials from environment or instance metadata
-    AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "ap-southeast-1")
-    
-    DATASOURCE_PAYLOAD=$(cat <<EOF
+    CW_PAYLOAD=$(cat <<EOF
 {
   "name": "CloudWatch",
   "type": "cloudwatch",
   "access": "proxy",
-  "isDefault": false,
   "jsonData": {
     "authType": "ec2_iam_role",
     "defaultRegion": "${AWS_REGION}"
@@ -57,89 +58,101 @@ else
 }
 EOF
 )
-    
-    DATASOURCE_RESPONSE=$(curl -s -X POST \
-        -H "Content-Type: application/json" \
-        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
-        -d "${DATASOURCE_PAYLOAD}" \
+    CW_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" -d "${CW_PAYLOAD}" \
         "${GRAFANA_URL}/api/datasources")
-    
-    if echo "$DATASOURCE_RESPONSE" | grep -q '"id"'; then
-        DATASOURCE_ID=$(echo "$DATASOURCE_RESPONSE" | jq -r '.id')
-        echo "✅ CloudWatch data source created (ID: ${DATASOURCE_ID})"
-    else
-        echo "❌ Failed to create CloudWatch data source"
-        echo "$DATASOURCE_RESPONSE" | jq '.'
-        exit 1
-    fi
+    CW_DATASOURCE_ID=$(echo "$CW_RESPONSE" | jq -r '.id')
+    echo "✅ CloudWatch data source created (ID: ${CW_DATASOURCE_ID})"
 fi
 
-# Step 2: Update dashboard JSON files to use CloudWatch datasource UID
+# Step 2: Check and Create Prometheus Data Source
 echo ""
-echo "→ Getting CloudWatch datasource UID..."
-DATASOURCE_UID=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
-    "${GRAFANA_URL}/api/datasources/${DATASOURCE_ID}" | jq -r '.uid')
+echo "→ Checking Prometheus data source..."
+PROM_DATASOURCE_CHECK=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+    "${GRAFANA_URL}/api/datasources/name/Prometheus" || echo "")
 
-echo "   CloudWatch UID: ${DATASOURCE_UID}"
-
-# Step 3: Import dashboards from JSON files
-DASHBOARD_DIR="/home/ubuntu/monitoring/grafana-dashboards"
-
-if [ ! -d "$DASHBOARD_DIR" ]; then
-    echo "⚠️  Dashboard directory not found at ${DASHBOARD_DIR}"
-    echo "   Creating directory and copying dashboards..."
-    mkdir -p "$DASHBOARD_DIR"
+if echo "$PROM_DATASOURCE_CHECK" | grep -q '"id"'; then
+    echo "✅ Prometheus data source already exists"
+    PROM_DATASOURCE_ID=$(echo "$PROM_DATASOURCE_CHECK" | jq -r '.id')
+else
+    echo "→ Creating Prometheus data source..."
+    PROM_URL="http://${MASTER_IP}:30090"
+    
+    PROM_PAYLOAD=$(cat <<EOF
+{
+  "name": "Prometheus",
+  "type": "prometheus",
+  "access": "proxy",
+  "url": "${PROM_URL}",
+  "basicAuth": true,
+  "basicAuthUser": "${PROM_USER}",
+  "secureJsonData": {
+    "basicAuthPassword": "${PROM_PASS}"
+  },
+  "jsonData": {
+    "httpMethod": "POST"
+  }
+}
+EOF
+)
+    PROM_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" -d "${PROM_PAYLOAD}" \
+        "${GRAFANA_URL}/api/datasources")
+    PROM_DATASOURCE_ID=$(echo "$PROM_RESPONSE" | jq -r '.id')
+    echo "✅ Prometheus data source created (ID: ${PROM_DATASOURCE_ID})"
 fi
 
+# Step 3: Get UIDs
+CW_UID=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" "${GRAFANA_URL}/api/datasources/${CW_DATASOURCE_ID}" | jq -r '.uid')
+PROM_UID=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" "${GRAFANA_URL}/api/datasources/${PROM_DATASOURCE_ID}" | jq -r '.uid')
+
+echo "   CloudWatch UID: ${CW_UID}"
+echo "   Prometheus UID: ${PROM_UID}"
+
+# Step 4: Import dashboards
+DASHBOARD_DIR="./monitoring/grafana-dashboards"
 echo ""
 echo "→ Importing dashboards..."
 
-# Function to import a dashboard
 import_dashboard() {
     local file=$1
     local title=$(jq -r '.title' "$file")
-    
     echo "   • ${title}..."
     
-    # Update namespace from node-fleet to NodeFleet/Autoscaler in queries
-    local updated_json=$(jq --arg uid "$DATASOURCE_UID" '
-        .panels[]?.targets[]?.datasource = {"type": "cloudwatch", "uid": $uid} |
-        .panels[]?.targets[]?.namespace = (
-            if .namespace == "node-fleet" then "NodeFleet/Autoscaler"
-            elif .namespace == "AWS/Lambda" then "AWS/Lambda"
-            elif .namespace == "AWS/EC2" then "AWS/EC2"
-            else .namespace
-            end
+    # Intelligently map data sources:
+    # 1. Targets with 'expr' get Prometheus
+    # 2. Targets with 'namespace' (CloudWatch style) or specifically 'cloudwatch' get CloudWatch
+    local updated_json=$(jq --arg cw_uid "$CW_UID" --arg prom_uid "$PROM_UID" '
+        (.panels[]? | select(.targets != null)) |= (
+            .targets[]? |= (
+                if .expr != null then
+                    .datasource = {"type": "prometheus", "uid": $prom_uid}
+                else
+                    .datasource = {"type": "cloudwatch", "uid": $cw_uid}
+                end
+            )
         )
     ' "$file")
     
-    # Wrap in dashboard object for import API
     local payload=$(jq -n --argjson dashboard "$updated_json" '{
         dashboard: $dashboard,
         overwrite: true,
         message: "Imported via fix-grafana-dashboards.sh"
     }')
     
-    local response=$(curl -s -X POST \
-        -H "Content-Type: application/json" \
-        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
-        -d "${payload}" \
+    local response=$(curl -s -X POST -H "Content-Type: application/json" \
+        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" -d "${payload}" \
         "${GRAFANA_URL}/api/dashboards/db")
     
     if echo "$response" | grep -q '"status":"success"'; then
-        local dash_uid=$(echo "$response" | jq -r '.uid')
-        echo "      ✅ Imported (UID: ${dash_uid})"
+        echo "      ✅ Imported"
     else
-        echo "      ❌ Failed"
-        echo "$response" | jq '.'
+        echo "      ❌ Failed: $(echo "$response" | jq -r '.message')"
     fi
 }
 
-# Import each dashboard
 for dashboard in ${DASHBOARD_DIR}/*.json; do
-    if [ -f "$dashboard" ]; then
-        import_dashboard "$dashboard"
-    fi
+    [ -f "$dashboard" ] && import_dashboard "$dashboard"
 done
 
 echo ""

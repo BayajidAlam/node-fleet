@@ -37,7 +37,7 @@ spec:
             - name: AWS_REGION
               value: "ap-southeast-1"
             - name: CLUSTER_NAME
-              value: "node-fleet-dev"
+              value: "node-fleet"
             - name: MONTHLY_BUDGET
               value: "500"
             - name: UPDATE_INTERVAL

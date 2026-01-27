@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  namespace: default
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: load-generator
+  template:
+    metadata:
+      labels:
+        app: load-generator
+    spec:
+      containers:
+      - name: stress-ng
+        image: litmuschaos/stress-ng:latest
+        resources:
+          requests:
+            cpu: "1000m"  # Request 1 cpu (1 vCPU) per pod
+            memory: "100Mi"
+        # Generate load: 1 cpu worker, 600s timeout
+        args: ["--cpu", "1", "--timeout", "600s"]

@@ -323,14 +323,27 @@ class EC2Manager:
             info = node_info.get(node_name, {'count': 0, 'has_sts': False})
             
             # Weighted sort key:
-            # Lifecycle: Spot (0) preferred over On-demand (100)
-            # StatefulSet: No STS (0) preferred over Has STS (1000)
-            # Pod Count: Fewer pods (1-99) preferred
-            lifecycle_weight = 0 if instance.get('InstanceLifecycle') == 'spot' else 100
-            sts_weight = 1000 if info['has_sts'] else 0
-            pod_weight = info['count']
+            # Critical Protection: Critical (10000) or Single Replica (5000) heavily protected
+            # StatefulSet: Has STS (1000) protected
+            # Lifecycle: On-demand (100) protected over Spot (0)
+            # Pod Count: More pods (1-99) protected
+            # LaunchTime: Older (0-1) protected over Newest (LIFO - smaller weight)
             
-            return sts_weight + lifecycle_weight + pod_weight
+            # Requirements: NEVER terminate nodes hosting System-critical, StatefulSet (unless safe), or Single-replica.
+            # We give them massive weights so they are only picked as a last resort, or we can filter them.
+            
+            critical_weight = 10000 if info.get('has_critical') else 0
+            single_replica_weight = 5000 if info.get('is_single_replica') else 0
+            sts_weight = 1000 if info.get('has_sts') else 0
+            lifecycle_weight = 100 if instance.get('InstanceLifecycle') != 'spot' else 0
+            pod_weight = info.get('count', 0)
+            
+            # Newest (LIFO) should have LOWEST weight to be picked first.
+            launch_timestamp = instance.get('LaunchTime', datetime.now(timezone.utc)).timestamp()
+            lifo_weight = -launch_timestamp / 1000000  # Smaller is newer
+            
+            total_weight = critical_weight + single_replica_weight + sts_weight + lifecycle_weight + pod_weight + lifo_weight
+            return total_weight
 
         instances_sorted = sorted(instances, key=get_sort_key)
         selected = instances_sorted[:count]
@@ -347,7 +360,7 @@ class EC2Manager:
         Get pod count and StatefulSet presence per node
         
         Returns:
-            Dict mapping node name to {'count': int, 'has_sts': bool}
+            Dict mapping node name to {'count': int, 'has_sts': bool, 'has_critical': bool, 'is_single_replica': bool}
         """
         try:
             if not self._load_kube_config():
@@ -355,28 +368,64 @@ class EC2Manager:
                 return {}
 
             v1 = client.CoreV1Api()
+            apps_v1 = client.AppsV1Api()
             
-            node_info = defaultdict(lambda: {'count': 0, 'has_sts': False})
+            node_info = defaultdict(lambda: {'count': 0, 'has_sts': False, 'has_critical': False, 'is_single_replica': False})
             pods = v1.list_pod_for_all_namespaces()
             
+            # Cache for deployment/replicaset counts to avoid redundant API calls
+            parent_replica_counts = {}
+
             for pod in pods.items:
-                if pod.metadata.namespace == 'kube-system':
-                    continue
                 if pod.status.phase in ['Succeeded', 'Failed']:
                     continue
                 
                 node_name = pod.spec.node_name
                 if not node_name:
                     continue
+
+                # 1. Identify System-Critical Pods (CoreDNS, Metrics Server, etc.)
+                if pod.metadata.namespace == 'kube-system':
+                    # Skip DaemonSet pods as they run everywhere
+                    is_daemonset = False
+                    if pod.metadata.owner_references:
+                        for owner in pod.metadata.owner_references:
+                            if owner.kind == "DaemonSet":
+                                is_daemonset = True
+                                break
+                    
+                    # Skip static pods
+                    is_static = pod.metadata.annotations and 'kubernetes.io/config.mirror' in pod.metadata.annotations
+                    
+                    if not is_daemonset and not is_static:
+                        node_info[node_name]['has_critical'] = True
+                    
+                    continue 
                     
                 node_info[node_name]['count'] += 1
                 
-                # Check for StatefulSet ownership
+                # 2. Identify StatefulSet pods
                 if pod.metadata.owner_references:
                     for owner in pod.metadata.owner_references:
                         if owner.kind == "StatefulSet":
                             node_info[node_name]['has_sts'] = True
                             break
+                        
+                        # 3. Identify Single-Replica Deployments
+                        if owner.kind == "ReplicaSet":
+                            rs_name = owner.name
+                            ns = pod.metadata.namespace
+                            cache_key = f"{ns}/{rs_name}"
+                            
+                            if cache_key not in parent_replica_counts:
+                                try:
+                                    rs = apps_v1.read_namespaced_replica_set(rs_name, ns)
+                                    parent_replica_counts[cache_key] = rs.spec.replicas
+                                except:
+                                    parent_replica_counts[cache_key] = 2 
+                            
+                            if parent_replica_counts.get(cache_key) == 1:
+                                node_info[node_name]['is_single_replica'] = True
             
             return node_info
             
