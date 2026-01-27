@@ -21,6 +21,7 @@ def collect_metrics(self):
 ```
 
 **Key Metrics Monitored**:
+
 1. **CPU Utilization**: Cluster-wide average (Reactive layer)
 2. **Pending Pods**: Immediate signal for urgency (Reactive layer)
 3. **Queue Depth**: Custom application metric (Bonus #4)
@@ -40,11 +41,11 @@ The decision engine uses a 3-layer approach detailed in `SCALING_ALGORITHM.md`.
 def evaluate(metrics):
     # Layer 1: Safety
     if locked or cooldown: return None
-    
+
     # Layer 2: Reactive
     if cpu > 70 and sustained_for(4_min): return ScaleUp()
     if pending_pods > 0: return ScaleUp(urgent=True)
-    
+
     # Layer 3: Predictive (Bonus #3)
     if prediction_model.will_spike_in(10_min): return ScaleUp(preventative=True)
 ```
@@ -115,6 +116,14 @@ Distributed locking prevents race conditions between Lambda invocations.
    - `node-fleet/ScaleUpEvents`
    - `node-fleet/CostEstimates`
 
+**CloudWatch Alarms**:
+
+Scale-Up Alarm:
+![Scale Up Alarm](alarms/Scale%20Up.png)
+
+Scale-Down Alarm:
+![Scale Down Alarm](alarms/Scale%20Down.png)
+
 3. **Slack Notifications** (Bonus #6):
    - Rich-text alerts for Scale Up/Down and Failures.
 
@@ -174,6 +183,7 @@ pulumi up --yes
 ```
 
 This provisions:
+
 - VPC & Networking
 - IAM Roles
 - DynamoDB Tables

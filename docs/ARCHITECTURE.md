@@ -56,6 +56,7 @@ node-fleet uses **Prometheus as the unified metrics aggregator**, which collects
 ### Metrics Sources
 
 **1. node-exporter** (System-level metrics)
+
 - Runs as a DaemonSet on every worker node
 - Exposes metrics on port 9100
 - Collects: CPU usage, memory, disk I/O, network I/O
@@ -67,6 +68,7 @@ node-fleet uses **Prometheus as the unified metrics aggregator**, which collects
   - `node_network_receive_bytes_total` - Network traffic
 
 **2. kube-state-metrics** (Kubernetes object metrics)
+
 - Runs on the master node
 - Exposes metrics on port 8080
 - Exposes K8s object state as Prometheus metrics
@@ -82,13 +84,13 @@ node-fleet uses **Prometheus as the unified metrics aggregator**, which collects
 def collect_metrics():
     # CPU from node-exporter
     cpu = query_prometheus('avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100')
-    
+
     # Memory from node-exporter
     memory = query_prometheus('(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100')
-    
+
     # Pending pods from kube-state-metrics
     pending_pods = query_prometheus('sum(kube_pod_status_phase{phase="Pending"})')
-    
+
     return {'cpu': cpu, 'memory': memory, 'pending_pods': pending_pods}
 ```
 
@@ -103,7 +105,7 @@ graph TB
     subgraph AWS["AWS Cloud"]
         subgraph VPC["VPC (10.0.0.0/16)"]
             style VPC fill:#f8f9fa,stroke:#333,stroke-width:2px,color:#000
-            
+
             subgraph Public["Public Subnets (NAT Layer)"]
                 style Public fill:#e3f2fd,stroke:#1565c0,color:#000
                 NAT1["NAT Gateway (AZ-1a)"]
@@ -114,7 +116,7 @@ graph TB
                 style Private fill:#e8f5e9,stroke:#2e7d32,color:#000
                 Master["K3s Master (t3.medium)<br>• Prometheus<br>• Grafana<br>• FluxCD"]
                 style Master fill:#c8e6c9,stroke:#1b5e20,color:#000
-                
+
                 subgraph Workers["Worker Fleet (Auto-scaled 2-10)"]
                     style Workers fill:#fff3e0,stroke:#ef6c00,color:#000
                     W1["Worker (Spot)"]
@@ -135,14 +137,14 @@ graph TB
             DDB[("DynamoDB<br>State Table")]
             Secret[("Secrets Manager")]
         end
-        
+
         subgraph Monitoring["Observability"]
             style Monitoring fill:#ffebee,stroke:#c62828,color:#000
             CW["CloudWatch"]
             SNS["SNS Topic"]
         end
     end
-    
+
     Slack["Slack Alerts"]
     style Slack fill:#4a154b,stroke:#fff,color:#fff
 
@@ -155,7 +157,7 @@ graph TB
     Lambda -->|5. Log Events| CW
     Lambda -->|6. Notify| SNS
     SNS -->|Webhook| Slack
-    
+
     %% Network Flow
     Master <-->|API/Metrics| Workers
     Workers -->|Internet Access| NAT1 & NAT2
@@ -213,9 +215,17 @@ graph TB
 
 ![Scale Up Flow](diagrams/scale_up_sequence.png)
 
+**CloudWatch Alarm Configuration for Scale-Up Events**:
+
+![Scale Up Alarm](alarms/Scale%20Up.png)
+
 ### Scale-Down Sequence
 
 ![Scale Down Flow](diagrams/scale_down_sequence.png)
+
+**CloudWatch Alarm Configuration for Scale-Down Events**:
+
+![Scale Down Alarm](alarms/Scale%20Down.png)
 
 ---
 
@@ -690,6 +700,20 @@ aws_potential_savings_hourly{optimization_type}
    - Budget status and optimization alerts
 
 **Access**: Port 30030 (NodePort), default credentials in Secrets Manager
+
+---
+
+#### CloudWatch Alarms
+
+**Scale-Up Alarm Configuration**:
+
+![Scale Up Alarm](alarms/Scale%20Up.png)
+
+**Scale-Down Alarm Configuration**:
+
+![Scale Down Alarm](alarms/Scale%20Down.png)
+
+These alarms trigger SNS notifications for critical scaling events, providing real-time visibility into autoscaling operations.
 
 ---
 

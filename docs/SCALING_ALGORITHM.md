@@ -145,6 +145,10 @@ def collect_metrics():
 
 ## Scale-Up Logic
 
+**CloudWatch Alarm Configuration**:
+
+![Scale Up Alarm](alarms/Scale%20Up.png)
+
 ### Sustained Threshold Detection
 
 **Problem**: Transient CPU spikes (30s-1min) can cause unnecessary scaling. A single reading above threshold is not sufficient.
@@ -329,6 +333,10 @@ def determine_instance_market_options(spot_percentage=70):
 ---
 
 ## Scale-Down Logic
+
+**CloudWatch Alarm Configuration**:
+
+![Scale Down Alarm](alarms/Scale%20Down.png)
 
 ### Trigger Conditions (AND Logic - ALL Must Be True)
 
