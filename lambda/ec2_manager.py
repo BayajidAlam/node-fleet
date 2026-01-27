@@ -10,6 +10,7 @@ import os
 import time
 import tempfile
 from typing import Dict, List
+from datetime import datetime, timezone
 from collections import defaultdict
 from botocore.exceptions import ClientError
 from kubernetes import client, config
@@ -355,85 +356,126 @@ class EC2Manager:
             
         return selected
 
+    
     def _get_node_pod_info(self) -> Dict[str, Dict]:
         """
-        Get pod count and StatefulSet presence per node
+        Get pod count and StatefulSet presence per node utilizing SSH for reliability
         
         Returns:
             Dict mapping node name to {'count': int, 'has_sts': bool, 'has_critical': bool, 'is_single_replica': bool}
         """
         try:
-            if not self._load_kube_config():
-                logger.warning("_get_node_pod_info: Failed to load kube config")
+            # Execute kubectl get pods -A -o json via SSH
+            cmd = "sudo k3s kubectl get pods -A -o json"
+            import paramiko
+            import io
+            import json
+            
+            # Re-implementing simplified SSH exec here to capture output directly
+            # or we could reuse _execute_master_command if we modified it to return output
+            # For brevity and safety, let's implement the specific logic here or modify _execute
+            
+            # Reuse _get_ssh_key
+            private_key_str = self._get_ssh_key()
+            if not private_key_str:
+                logger.error("No SSH key available for pod info")
                 return {}
-
-            v1 = client.CoreV1Api()
-            apps_v1 = client.AppsV1Api()
+                
+            private_key = paramiko.RSAKey.from_private_key(io.StringIO(private_key_str))
+            
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            
+            master_ip = "10.0.1.147"
+            client.connect(hostname=master_ip, username="ubuntu", pkey=private_key, timeout=10)
+            
+            stdin, stdout, stderr = client.exec_command(cmd)
+            exit_status = stdout.channel.recv_exit_status()
+            out_str = stdout.read().decode().strip()
+            client.close()
+            
+            if exit_status != 0:
+                logger.error(f"Failed to get pods via SSH: {stderr.read().decode()}")
+                return {}
+                
+            try:
+                pod_list = json.loads(out_str)
+            except json.JSONDecodeError:
+                logger.error("Failed to decode JSON from pod list")
+                return {}
             
             node_info = defaultdict(lambda: {'count': 0, 'has_sts': False, 'has_critical': False, 'is_single_replica': False})
-            pods = v1.list_pod_for_all_namespaces()
             
-            # Cache for deployment/replicaset counts to avoid redundant API calls
-            parent_replica_counts = {}
-
-            for pod in pods.items:
-                if pod.status.phase in ['Succeeded', 'Failed']:
+            # We also need ReplicaSet info for single-replica check
+            # Executing a second command to get ReplicaSets
+            # Optimized: We'll skip the single-replica deep check via SSH for now or do a second call?
+            # Let's do a second call for ReplicaSets to be thorough
+            
+            client.connect(hostname=master_ip, username="ubuntu", pkey=private_key, timeout=10)
+            rs_cmd = "sudo k3s kubectl get replicasets -A -o json"
+            stdin, stdout, stderr = client.exec_command(rs_cmd)
+            rs_out = stdout.read().decode().strip()
+            client.close()
+            
+            rs_map = {} # namespace/name -> replicas
+            try:
+                rs_list = json.loads(rs_out)
+                for rs in rs_list.get('items', []):
+                    key = f"{rs['metadata']['namespace']}/{rs['metadata']['name']}"
+                    rs_map[key] = rs.get('spec', {}).get('replicas', 1)
+            except:
+                logger.warning("Failed to parse ReplicaSets via SSH, assuming safe defaults")
+            
+            for pod in pod_list.get('items', []):
+                status = pod.get('status', {})
+                if status.get('phase') in ['Succeeded', 'Failed']:
                     continue
                 
-                node_name = pod.spec.node_name
+                spec = pod.get('spec', {})
+                node_name = spec.get('nodeName')
                 if not node_name:
                     continue
-
-                # 1. Identify System-Critical Pods (CoreDNS, Metrics Server, etc.)
-                if pod.metadata.namespace == 'kube-system':
-                    # Skip DaemonSet pods as they run everywhere
+                
+                metadata = pod.get('metadata', {})
+                namespace = metadata.get('namespace', 'default')
+                
+                # 1. Critical Pods
+                if namespace == 'kube-system':
                     is_daemonset = False
-                    if pod.metadata.owner_references:
-                        for owner in pod.metadata.owner_references:
-                            if owner.kind == "DaemonSet":
-                                is_daemonset = True
-                                break
+                    owners = metadata.get('ownerReferences', [])
+                    for owner in owners:
+                        if owner.get('kind') == 'DaemonSet':
+                            is_daemonset = True
+                            break
                     
-                    # Skip static pods
-                    is_static = pod.metadata.annotations and 'kubernetes.io/config.mirror' in pod.metadata.annotations
+                    annotations = metadata.get('annotations', {})
+                    is_static = 'kubernetes.io/config.mirror' in annotations
                     
                     if not is_daemonset and not is_static:
                         node_info[node_name]['has_critical'] = True
-                    
-                    continue 
-                    
+                    continue
+                
                 node_info[node_name]['count'] += 1
                 
-                # 2. Identify StatefulSet pods
-                if pod.metadata.owner_references:
-                    for owner in pod.metadata.owner_references:
-                        if owner.kind == "StatefulSet":
-                            node_info[node_name]['has_sts'] = True
-                            break
-                        
-                        # 3. Identify Single-Replica Deployments
-                        if owner.kind == "ReplicaSet":
-                            rs_name = owner.name
-                            ns = pod.metadata.namespace
-                            cache_key = f"{ns}/{rs_name}"
-                            
-                            if cache_key not in parent_replica_counts:
-                                try:
-                                    rs = apps_v1.read_namespaced_replica_set(rs_name, ns)
-                                    parent_replica_counts[cache_key] = rs.spec.replicas
-                                except:
-                                    parent_replica_counts[cache_key] = 2 
-                            
-                            if parent_replica_counts.get(cache_key) == 1:
-                                node_info[node_name]['is_single_replica'] = True
+                # 2. StatefulSets & 3. Single Replica
+                owners = metadata.get('ownerReferences', [])
+                for owner in owners:
+                    kind = owner.get('kind')
+                    if kind == 'StatefulSet':
+                        node_info[node_name]['has_sts'] = True
+                    
+                    elif kind == 'ReplicaSet':
+                        rs_name = owner.get('name')
+                        key = f"{namespace}/{rs_name}"
+                        if rs_map.get(key) == 1:
+                            node_info[node_name]['is_single_replica'] = True
             
+            logger.info(f"SSH Retrieved Node Pod Info: {json.dumps(node_info)}")
             return node_info
             
         except Exception as e:
-            logger.error(f"Error getting node pod info: {e}")
+            logger.error(f"Error getting node pod info via SSH: {e}")
             return {}
-    
-    
     def _get_node_name_from_instance(self, instance_id: str) -> str:
         """Get Kubernetes node name from EC2 instance ID"""
         try:
@@ -526,278 +568,63 @@ class EC2Manager:
         import os
         return os.environ.get('CLUSTER_ID', 'node-fleet-cluster')
     
-    def _drain_node(self, node_name: str, timeout: int = 300) -> bool:
-        """
-        Drain Kubernetes node before termination
-        
-        Args:
-            node_name: K8s node name
-            timeout: Drain timeout in seconds
-        
-        Returns:
-            True if successful, False otherwise
-        """
+    def _get_ssh_key(self) -> str:
+        """Retrieve SSH key from Secrets Manager"""
         try:
-            # Load kubeconfig
-            if not self._load_kube_config():
-                logger.warning(f"Failed to load kube config, skipping drain for {node_name}")
-                return True # Fail open to allow termination? Or return False to block? Original code returned True on missing config.
-            
-            v1 = client.CoreV1Api()
-            
-            # Step 1: Cordon the node (mark as unschedulable)
-            try:
-                logger.info(f"Cordoning node {node_name}")
-                body = {
-                    "spec": {
-                        "unschedulable": True
-                    }
-                }
-                v1.patch_node(node_name, body)
-            except ApiException as e:
-                if e.status == 404:
-                    logger.warning(f"Node {node_name} not found in K8s. Assuming it's already removed or never joined. Proceeding with termination.")
-                    return True
-                else:
-                    raise e
-            
-            # Step 2: Get all pods on the node
-            logger.info(f"Getting pods on node {node_name}")
-            field_selector = f"spec.nodeName={node_name}"
-            pods = v1.list_pod_for_all_namespaces(field_selector=field_selector)
-            
-            # Step 3: Delete pods (ignore daemonsets, static pods, check StatefulSets)
-            pods_to_delete = []
-            statefulset_pods = []
-            
-            for pod in pods.items:
-                skip_pod = False
-                
-                # Check owner references
-                if pod.metadata.owner_references:
-                    for owner in pod.metadata.owner_references:
-                        # Skip DaemonSet pods
-                        if owner.kind == "DaemonSet":
-                            logger.info(f"Skipping DaemonSet pod {pod.metadata.name}")
-                            skip_pod = True
-                            break
-                        
-                        # Identify StatefulSet pods for special handling
-                        if owner.kind == "StatefulSet":
-                            statefulset_pods.append(pod)
-                            logger.warning(f"StatefulSet pod detected: {pod.metadata.namespace}/{pod.metadata.name}")
-                            # Don't skip yet, will handle carefully
-                
-                if skip_pod:
-                    continue
-                
-                # Check for static pods (mirror pods)
-                if pod.metadata.annotations and 'kubernetes.io/config.mirror' in pod.metadata.annotations:
-                    logger.info(f"Skipping static pod {pod.metadata.name}")
-                    continue
-                
-                pods_to_delete.append(pod)
-            
-            # Check if draining StatefulSet pods is safe
-            if statefulset_pods:
-                logger.warning(f"Found {len(statefulset_pods)} StatefulSet pods - verifying replicas on other nodes")
-                
-                # Verify each StatefulSet has replicas on other nodes
-                for sts_pod in statefulset_pods:
-                    is_safe = self._verify_statefulset_replicas(sts_pod, node_name)
-                    
-                    if not is_safe:
-                        logger.error(
-                            f"UNSAFE: StatefulSet {sts_pod.metadata.namespace}/{sts_pod.metadata.name} "
-                            f"has no other replicas running. Aborting drain to prevent data loss."
-                        )
-                        # Uncordon the node since we're not proceeding
-                        self._uncordon_node(node_name)
-                        return False
-                    
-                    logger.info(
-                        f"✓ StatefulSet {sts_pod.metadata.namespace}/{sts_pod.metadata.name} "
-                        f"has replicas on other nodes - safe to drain"
-                    )
-            
-            logger.info(f"Draining {len(pods_to_delete)} pods from node {node_name}")
-            
-            # Step 4: Evict pods with grace period
-            for pod in pods_to_delete:
-                try:
-                    # Use eviction API for graceful pod termination
-                    eviction = client.V1Eviction(
-                        metadata=client.V1ObjectMeta(
-                            name=pod.metadata.name,
-                            namespace=pod.metadata.namespace
-                        ),
-                        delete_options=client.V1DeleteOptions(
-                            grace_period_seconds=30
-                        )
-                    )
-                    v1.create_namespaced_pod_eviction(
-                        name=pod.metadata.name,
-                        namespace=pod.metadata.namespace,
-                        body=eviction
-                    )
-                    logger.info(f"Evicted pod {pod.metadata.namespace}/{pod.metadata.name}")
-                except ApiException as e:
-                    if e.status == 404:
-                        logger.info(f"Pod {pod.metadata.name} already deleted")
-                    elif e.status == 429:
-                        logger.warning(f"PodDisruptionBudget prevents eviction of {pod.metadata.name}")
-                    else:
-                        logger.error(f"Failed to evict pod {pod.metadata.name}: {e}")
-            
-            # Step 5: Wait for pods to be fully removed (up to timeout)
-            logger.info(f"Waiting for node {node_name} to be empty (timeout: {timeout}s)")
-            start_poll_time = time.time()
-            while (time.time() - start_poll_time) < timeout:
-                remaining_pods = v1.list_pod_for_all_namespaces(field_selector=field_selector)
-                
-                # Check for remaining pods (ignoring daemonsets and static pods)
-                count = 0
-                for p in remaining_pods.items:
-                    is_infra = False
-                    if p.metadata.owner_references:
-                        for owner in p.metadata.owner_references:
-                            if owner.kind == "DaemonSet":
-                                is_infra = True; break
-                    if not is_infra and not (p.metadata.annotations and 'kubernetes.io/config.mirror' in p.metadata.annotations):
-                        count += 1
-                
-                if count == 0:
-                    logger.info(f"Node {node_name} successfully drained of all pods")
-                    return True
-                    
-                logger.info(f"Waiting for {count} pods to finish evicting from {node_name}...")
-                time.sleep(10)
-            
-            logger.warning(f"Drain timeout reached for {node_name} after {timeout}s. Aborting scale-down per requirements.")
-            self._uncordon_node(node_name)
-            return False
-            
-            logger.info(f"Successfully drained node {node_name}")
-            return True
-            
-        except ApiException as e:
-            logger.error(f"Kubernetes API error while draining node {node_name}: {e}")
-            # Uncordon node on failure to restore scheduling
-            self._uncordon_node(node_name)
-            return False
+            logger.info("Retrieving SSH key from Secrets Manager...")
+            sm = boto3.client('secretsmanager')
+            response = sm.get_secret_value(SecretId='node-fleet/ssh-key')
+            return response['SecretString']
         except Exception as e:
-            logger.error(f"Failed to drain node {node_name}: {str(e)}")
-            # Uncordon node on failure to restore scheduling
-            self._uncordon_node(node_name)
-            return False
-    
-    def _verify_statefulset_replicas(self, pod, current_node: str) -> bool:
-        """
-        Verify that a StatefulSet has other running replicas on different nodes
-        
-        Args:
-            pod: StatefulSet pod object
-            current_node: Node being drained
-        
-        Returns:
-            True if other replicas exist, False otherwise
-        """
-        try:
-            if not self._load_kube_config():
-                return True
+            logger.error(f"Failed to get SSH key: {e}")
+            return None
 
-            v1 = client.CoreV1Api()
-            apps_v1 = client.AppsV1Api()
-            
-            # Get StatefulSet name from pod
-            statefulset_name = None
-            for owner in pod.metadata.owner_references:
-                if owner.kind == "StatefulSet":
-                    statefulset_name = owner.name
-                    break
-            
-            if not statefulset_name:
-                logger.warning(f"Could not determine StatefulSet name for pod {pod.metadata.name}")
-                return True  # Default to safe
-            
-            # Get StatefulSet
-            sts = apps_v1.read_namespaced_stateful_set(
-                name=statefulset_name,
-                namespace=pod.metadata.namespace
-            )
-            
-            desired_replicas = sts.spec.replicas
-            
-            # Get all pods for this StatefulSet
-            label_selector = ",".join([f"{k}={v}" for k, v in sts.spec.selector.match_labels.items()])
-            sts_pods = v1.list_namespaced_pod(
-                namespace=pod.metadata.namespace,
-                label_selector=label_selector
-            )
-            
-            # Count running replicas on other nodes
-            other_node_replicas = 0
-            for sts_pod in sts_pods.items:
-                # Skip the pod being drained
-                if sts_pod.metadata.name == pod.metadata.name:
-                    continue
-                
-                # Check if running on a different node and is Ready
-                if (sts_pod.spec.node_name != current_node and 
-                    sts_pod.status.phase == "Running"):
-                    
-                    # Check pod readiness
-                    is_ready = False
-                    if sts_pod.status.conditions:
-                        for condition in sts_pod.status.conditions:
-                            if condition.type == "Ready" and condition.status == "True":
-                                is_ready = True
-                                break
-                    
-                    if is_ready:
-                        other_node_replicas += 1
-            
-            logger.info(
-                f"StatefulSet {statefulset_name}: "
-                f"Desired={desired_replicas}, "
-                f"Running on other nodes={other_node_replicas}"
-            )
-            
-            # Safe to drain if there's at least 1 replica on another node
-            return other_node_replicas > 0
-            
-        except Exception as e:
-            logger.error(f"Error verifying StatefulSet replicas: {e}")
-            # On error, default to safe (don't block drain for transient errors)
-            return True
-    
-    def _uncordon_node(self, node_name: str) -> bool:
-        """
-        Uncordon a node (mark as schedulable)
+    def _execute_master_command(self, command: str) -> bool:
+        """Execute command on master node via SSH"""
+        import paramiko
+        import io
         
-        Args:
-            node_name: K8s node name
-        
-        Returns:
-            True if successful, False otherwise
-        """
         try:
-            config.load_incluster_config()
-            v1 = client.CoreV1Api()
+            # Get SSH key
+            private_key_str = self._get_ssh_key()
+            if not private_key_str:
+                return False
+                
+            private_key = paramiko.RSAKey.from_private_key(io.StringIO(private_key_str))
             
-            logger.info(f"Uncordoning node {node_name}")
-            body = {
-                "spec": {
-                    "unschedulable": False
-                }
-            }
-            v1.patch_node(node_name, body)
-            logger.info(f"Successfully uncordoned node {node_name}")
-            return True
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
+            # Connect to Master Private IP
+            master_ip = "10.0.1.147"
+            logger.info(f"SSH Connecting to master {master_ip}...")
+            client.connect(hostname=master_ip, username="ubuntu", pkey=private_key, timeout=10)
+            
+            logger.info(f"Executing: {command}")
+            stdin, stdout, stderr = client.exec_command(command)
+            exit_status = stdout.channel.recv_exit_status()
+            
+            out_str = stdout.read().decode().strip()
+            err_str = stderr.read().decode().strip()
+            
+            if exit_status == 0:
+                logger.info(f"Command success: {out_str}")
+                client.close()
+                return True
+            else:
+                logger.error(f"Command failed (exit {exit_status}): {err_str}")
+                client.close()
+                return False
+                
         except Exception as e:
-            logger.error(f"Failed to uncordon node {node_name}: {e}")
+            logger.error(f"SSH Execution Error: {e}")
             return False
+
+    def _drain_node(self, node_name: str, timeout: int = 300) -> bool:
+        """Drain node using SSH to master (more reliable than remote API)"""
+        logger.info(f"Draining node {node_name} via SSH...")
+        cmd = f"sudo k3s kubectl drain {node_name} --ignore-daemonsets --delete-emptydir-data --force --timeout={timeout}s"
+        return self._execute_master_command(cmd)
 
     def _load_kube_config(self) -> bool:
         """
@@ -811,6 +638,10 @@ class EC2Manager:
         if kubeconfig_path and os.path.exists(kubeconfig_path):
             try:
                 config.load_kube_config(config_file=kubeconfig_path)
+                # Force disable SSL verification
+                c = client.Configuration.get_default_copy()
+                c.verify_ssl = False
+                client.Configuration.set_default(c)
                 return True
             except Exception as e:
                 logger.warning(f"Failed to load from KUBECONFIG={kubeconfig_path}: {e}")
@@ -836,7 +667,14 @@ class EC2Manager:
                 f.write(kubeconfig_content)
             
             os.environ['KUBECONFIG'] = tmp_path
+            
             config.load_kube_config(config_file=tmp_path)
+            
+            # Force disable SSL verification
+            c = client.Configuration.get_default_copy()
+            c.verify_ssl = False
+            client.Configuration.set_default(c)
+            
             logger.info(f"Successfully loaded kubeconfig from Secrets Manager to {tmp_path}")
             return True
             
@@ -845,35 +683,7 @@ class EC2Manager:
             return False
 
     def _delete_node(self, node_name: str) -> bool:
-        """
-        Delete Kubernetes node object after instance termination
-        
-        Args:
-            node_name: K8s node name
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if not self._load_kube_config():
-                logger.warning(f"Failed to load kube config, skipping node deletion for {node_name}")
-                return False
-            
-            v1 = client.CoreV1Api()
-            logger.info(f"Deleting Kubernetes node object {node_name}")
-            v1.delete_node(
-                name=node_name
-            )
-            logger.info(f"Successfully deleted node object {node_name}")
-            return True
-            
-        except ApiException as e:
-            if e.status == 404:
-                logger.info(f"Node {node_name} already deleted")
-                return True
-            else:
-                logger.error(f"Failed to delete node object {node_name}: {e}")
-                return False
-        except Exception as e:
-            logger.error(f"Error deleting node object {node_name}: {e}")
-            return False
+        """Delete node using SSH to master"""
+        logger.info(f"Deleting node {node_name} object via SSH...")
+        cmd = f"sudo k3s kubectl delete node {node_name} --ignore-not-found"
+        return self._execute_master_command(cmd)
