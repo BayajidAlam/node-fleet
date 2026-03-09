@@ -16,7 +16,7 @@
 
 _Reduce infrastructure costs by 40-50% through intelligent, event-driven autoscaling_
 
-[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [Technical Docs](#-technical-documentation) • [Testing](#-testing)
+[Features](#project-overview-and-problem-statement) • [Architecture](#architecture-explanation-with-diagrams) • [Quick Start](#setup-and-deployment-instructions) • [Technical Docs](#technical-documentation) • [Testing](#testing-strategy-and-results)
 
 </div>
 
@@ -297,6 +297,8 @@ We track Lambda performance, EC2 lifecycle events, and cluster health in real-ti
 ---
 
 ## 🧪 Testing Strategy and Results
+
+![Tests Passing](docs/test/Screenshot%20from%202026-01-26%2013-07-40.png)
 
 We utilize a multi-layered testing strategy verified across **120 test cases**:
 - **Load Testing**: Use `k6 run load-test.js` to simulate traffic spikes by increasing Virtual Users (VUs) from 1 to 100, forcing CPU saturation.

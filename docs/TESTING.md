@@ -16,7 +16,18 @@ To maintain the high quality of this project, developers should follow these spe
 
 ### **How to Run Tests**
 - **Infrastructure**: Run `npm test` inside the `tests/` directory.
+  - ![Lambda Infrastructure Test Results](test/Screenshot%20from%202026-01-26%2013-07-40.png)
+  - ![IAM Roles Test Results](test/Screenshot%20from%202026-01-26%2013-50-19.png)
 - **Scaling Logic**: Use `pytest lambda/` to verify algorithms.
+  - ![Scaling Decision Test Results](test/Screenshot%20from%202026-01-26%2013-13-30.png)
+  - ![Spot Instance Test Results](test/Screenshot%20from%202026-01-26%2013-51-37.png)
+  - ![Predictive Scaling Test Results](test/Screenshot%20from%202026-01-26%2013-52-26.png)
+  - ![Custom Metrics Test Results](test/Screenshot%20from%202026-01-26%2013-53-21.png)
+  - ![State Manager & EC2 Test Results](test/Screenshot%20from%202026-01-26%2013-55-04.png)
+- **Monitoring & Cost Analysis**: Run `pytest tests/monitoring/` inside the project.
+  - ![Cost System Test Results](test/Screenshot%20from%202026-01-26%2013-13-45.png)
+- **Gitops**: Run `pytest tests/gitops/` inside the project.
+  - ![Flux Mocked Test Results](test/Screenshot%20from%202026-01-26%2013-54-05.png)
 - **Full Suite**: Execute the main test runner in the `tests/` folder for a complete system check.
 
 ---

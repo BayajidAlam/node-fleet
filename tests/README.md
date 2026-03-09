@@ -54,6 +54,8 @@ npm install
 npm test
 ```
 
+![All Tests Result](../docs/test/Screenshot%20from%202026-01-26%2013-07-40.png)
+
 ### Unit Tests Only
 
 ```bash
