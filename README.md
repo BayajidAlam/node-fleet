@@ -137,6 +137,18 @@ You may deploy this architecture in the following environments:
 
 ## 📘 Technical Documentation
 
+This project contains comprehensive architectural and operational documentation. Please refer to these specific guides in the [`docs/`](docs/) directory for deep dives:
+
+- 🏗️ **[Architecture Overview](docs/ARCHITECTURE.md)**: Deep dive into the lambda logic, state management, and Prometheus metrics.
+- ⚙️ **[Scaling Algorithm](docs/SCALING_ALGORITHM.md)**: Detailed breakdown of the CPU/Memory thresholds and AI predictive scaling logic.
+- 🚀 **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)**: Step-by-step instructions for AWS provisioning, K3s setup, and GitOps.
+- 💰 **[Cost Analysis](docs/COST_ANALYSIS.md)**: Breakdown of Spot Instance ROI and cost-optimization strategies.
+- 🔒 **[Security Checklist](docs/SECURITY_CHECKLIST.md)**: IAM least-privilege policies, VPC isolation, and K3s secrets management.
+- ✨ **[Implementation Highlights](docs/IMPLEMENTATION_HIGHLIGHTS.md)**: Key technical challenges solved (distributed locking, idempotent user-data).
+- 🆘 **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**: Solutions for common node joining issues, lambda timeouts, and Prometheus queries.
+- 📋 **[Original Requirements](docs/REQUIREMENTS.md)** & **[Solution Architecture](docs/SOLUTION_ARCHITECTURE.md)**: The baseline business requirements mapping.
+- 🧪 **[Testing Strategy](docs/TESTING.md)**: 120+ test cases covering load tests, unit tests, and failure scenarios.
+
 ### 🐍 Lambda Function Code and Logic
 The Lambda handler (`node-fleet-autoscaler`) follows a tiered execution logic:
 - **Pre-flight**: Acquires a DynamoDB lock with a 5-minute TTL to prevent race conditions.
