@@ -58,12 +58,15 @@ spec:
     spec:
       containers:
       - name: grafana
-        image: grafana/grafana:latest
+        image: grafana/grafana:10.2.3
         ports:
         - containerPort: 3000
         env:
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: "admin123"
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin-secret
+              key: admin-password
         - name: GF_PATHS_PROVISIONING
           value: "/etc/grafana/provisioning"
         volumeMounts:
@@ -96,4 +99,5 @@ echo ""
 echo "Grafana is now configured with:"
 echo "  - Prometheus data source (pre-configured)"
 echo "  - 3 dashboards: Autoscaler Overview, Cost Dashboard, Cost Tracking"
-echo "  - Access: http://18.142.249.81:30091 (admin/admin123)"
+MASTER_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "<master-ip>")
+echo "  - Access: http://${MASTER_IP}:30300"

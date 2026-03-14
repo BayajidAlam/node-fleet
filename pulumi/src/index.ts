@@ -18,7 +18,7 @@ import {
   workerInstanceProfile,
 } from "./iam";
 import { stateTable, metricsHistoryTable } from "./dynamodb";
-import { k3sSecret, slackSecret } from "./secrets";
+import { k3sSecret, slackSecret, prometheusAuthSecret, grafanaSecret } from "./secrets";
 import { slackTopic, slackNotifierLambda } from "./sns";
 import { keyPair } from "./keypair";
 import { masterInstance, masterPublicIp, masterPrivateIp } from "./ec2-master";
@@ -57,6 +57,8 @@ export const stateTableName = stateTable.name;
 export const metricsHistoryTableName = metricsHistoryTable.name;
 export const k3sTokenSecretArn = k3sSecret.arn;
 export const slackWebhookSecretArn = slackSecret.arn;
+export const prometheusAuthSecretArn = prometheusAuthSecret.arn;
+export const grafanaSecretArn = grafanaSecret.arn;
 export const notificationTopicArn = slackTopic.arn;
 export const sshKeyName = keyPair.keyName;
 export const masterRoleArn = masterRole.arn;
@@ -74,6 +76,7 @@ export const workerSpotLaunchTemplateId = workerSpotTemplate.id;
 
 // Lambda autoscaler exports
 export const autoscalerFunctionArn = autoscalerLambdaArn;
+export const autoscalerFunctionName = autoscalerLambda.name;
 export const autoscalerScheduleRuleName = autoscalerScheduleName;
 export const lambdaArtifactsBucketName = lambdaArtifactsBucket.id;
 

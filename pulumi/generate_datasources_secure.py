@@ -1,6 +1,9 @@
 import yaml
+import os
 
-password = 'ED($is6xAkAXg4o&nCWhJ%M)&=7Xh8!['
+password = os.environ.get('PROMETHEUS_PASSWORD')
+if not password:
+    raise SystemExit("Error: Set PROMETHEUS_PASSWORD environment variable before running this script")
 
 datasources = {
     'apiVersion': 1,
@@ -23,7 +26,7 @@ datasources = {
             'access': 'proxy',
             'jsonData': {
                 'authType': 'default',
-                'defaultRegion': 'us-east-1'
+                'defaultRegion': 'ap-southeast-1'
             }
         }
     ]

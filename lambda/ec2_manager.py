@@ -488,7 +488,8 @@ class EC2Manager:
                 private_dns = instance.get('PrivateDnsName', '')
                 # K3s typically uses hostname as node name
                 return private_dns.split('.')[0] if private_dns else instance_id
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get node name for instance {instance_id}: {e}")
             return None
     
     def _wait_for_nodes_ready(self, instance_ids: List[str], timeout: int = 300) -> List[str]:
@@ -568,7 +569,6 @@ class EC2Manager:
     
     def _get_cluster_id(self) -> str:
         """Get cluster ID from environment or tags"""
-        import os
         return os.environ.get('CLUSTER_ID', 'node-fleet-cluster')
     
     def _get_ssh_key(self) -> str:
@@ -707,7 +707,7 @@ class EC2Manager:
         try:
             config.load_incluster_config()
             return True
-        except:
+        except Exception:
             pass
             
         # 3. Try Secrets Manager

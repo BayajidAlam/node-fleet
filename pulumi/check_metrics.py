@@ -4,7 +4,9 @@ import os
 
 url = "http://localhost:30090/api/v1/query"
 user = "prometheus-admin"
-password = 'ED($is6xAkAXg4o&nCWhJ%M)&=7Xh8!['
+password = os.environ.get('PROMETHEUS_PASSWORD')
+if not password:
+    raise SystemExit("Error: Set PROMETHEUS_PASSWORD environment variable before running this script")
 params = {'query': 'up'}
 
 try:

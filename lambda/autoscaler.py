@@ -330,15 +330,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 success=False,
                 error_type=error_type
             )
-        except:
-            pass  # Don't fail if metrics publishing fails
+        except Exception as publish_err:
+            logger.warning(f"Failed to publish error metrics: {publish_err}")
         
         # Send error notification
         error_message = f"🔴 *Autoscaler Error*\n```{str(e)}```"
         try:
             send_notification(error_message)
-        except:
-            pass  # Don't fail if notification fails
+        except Exception as notify_err:
+            logger.warning(f"Failed to send error notification: {notify_err}")
         
         raise
 

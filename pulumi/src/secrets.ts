@@ -21,7 +21,7 @@ export const k3sSecretVersion = new aws.secretsmanager.SecretVersion(
   {
     secretId: k3sSecret.id,
     secretString: k3sToken.result,
-  }
+  },
 );
 
 // Slack webhook secret (from Pulumi config)
@@ -38,7 +38,7 @@ export const slackSecretVersion = new aws.secretsmanager.SecretVersion(
   {
     secretId: slackSecret.id,
     secretString: slackWebhookUrl,
-  }
+  },
 );
 
 // Prometheus basic auth credentials
@@ -53,7 +53,7 @@ export const prometheusAuthSecret = new aws.secretsmanager.Secret(
     name: "node-fleet/prometheus-auth",
     description: "Prometheus basic authentication credentials",
     recoveryWindowInDays: 0,
-  }
+  },
 );
 
 export const prometheusAuthSecretVersion = new aws.secretsmanager.SecretVersion(
@@ -61,5 +61,28 @@ export const prometheusAuthSecretVersion = new aws.secretsmanager.SecretVersion(
   {
     secretId: prometheusAuthSecret.id,
     secretString: pulumi.interpolate`{"username":"prometheus-admin","password":"${prometheusPassword.result}"}`,
-  }
+  },
+);
+
+// Grafana admin password (required by k3s/master-setup.sh)
+const grafanaPassword = new random.RandomPassword("grafana-admin-password", {
+  length: 32,
+  special: true,
+});
+
+export const grafanaSecret = new aws.secretsmanager.Secret(
+  "grafana-admin-password",
+  {
+    name: "node-fleet/grafana-admin-password",
+    description: "Grafana admin password for dashboard access",
+    recoveryWindowInDays: 0,
+  },
+);
+
+export const grafanaSecretVersion = new aws.secretsmanager.SecretVersion(
+  "grafana-admin-password-version",
+  {
+    secretId: grafanaSecret.id,
+    secretString: pulumi.interpolate`{"password":"${grafanaPassword.result}"}`,
+  },
 );

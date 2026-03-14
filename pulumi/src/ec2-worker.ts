@@ -44,10 +44,26 @@ export const workerLaunchTemplate = new aws.ec2.LaunchTemplate(
           volumeType: "gp3",
           encrypted: true,
           deleteOnTermination: true,
+        },
+      },
+    ],
+    tagSpecifications: [
+      {
+        resourceType: "instance",
+        tags: {
+          Name: `${clusterName}-worker`,
           Role: "k3s-worker",
           Project: "node-fleet",
           ManagedBy: "autoscaler",
           InstanceType: "on-demand",
+        },
+      },
+      {
+        resourceType: "volume",
+        tags: {
+          Role: "k3s-worker",
+          Project: "node-fleet",
+          ManagedBy: "autoscaler",
         },
       },
     ],

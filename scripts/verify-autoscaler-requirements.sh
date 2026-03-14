@@ -9,8 +9,12 @@ echo "Lambda Autoscaler Requirements Verification"
 echo "========================================"
 echo ""
 
-# Get Lambda function details
-FUNCTION_NAME="node-fleet-dev-autoscaler"
+# Get Lambda function details — derive name from Pulumi or use env var
+FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-$(aws lambda list-functions --query 'Functions[?contains(FunctionName, `autoscaler`)].FunctionName' --output text 2>/dev/null | head -1)}"
+if [ -z "$FUNCTION_NAME" ]; then
+  echo "❌ Error: Could not determine Lambda function name. Set LAMBDA_FUNCTION_NAME env var."
+  exit 1
+fi
 AWS_REGION=$(aws configure get region || echo "ap-southeast-1")
 
 echo "→ Checking Lambda function configuration..."
@@ -117,7 +121,9 @@ echo ""
 echo "3️⃣  NODE CONSTRAINTS"
 MIN=$(echo "$ENV_VARS" | jq -r '.MIN_NODES // "2"')
 MAX=$(echo "$ENV_VARS" | jq -r '.MAX_NODES // "10"')
-CURRENT=$(aws dynamodb get-item --table-name "node-fleet-dev-state" --key '{"cluster_id":{"S":"node-fleet-dev"}}' --output json 2>/dev/null | jq -r '.Item.node_count.N // "unknown"')
+CLUSTER_ID=$(echo "$ENV_VARS" | jq -r '.CLUSTER_ID // "node-fleet"')
+STATE_TABLE_NAME=$(echo "$ENV_VARS" | jq -r '.STATE_TABLE // "node-fleet-state"')
+CURRENT=$(aws dynamodb get-item --table-name "$STATE_TABLE_NAME" --key "{\"cluster_id\":{\"S\":\"${CLUSTER_ID}\"}}" --output json 2>/dev/null | jq -r '.Item.node_count.N // "unknown"')
 
 echo "   Required: MIN=2, MAX=10"
 if [ "$MIN" = "2" ] && [ "$MAX" = "10" ]; then
@@ -153,8 +159,8 @@ fi
 # Requirement 6: DynamoDB State Management
 echo ""
 echo "6️⃣  DYNAMODB STATE & LOCKING (Req: Conditional writes, race prevention)"
-TABLE_NAME=$(echo "$ENV_VARS" | jq -r '.STATE_TABLE // "node-fleet-dev-state"')
-STATE_DATA=$(aws dynamodb get-item --table-name "$TABLE_NAME" --key '{"cluster_id":{"S":"node-fleet-dev"}}' --output json 2>/dev/null)
+TABLE_NAME=$(echo "$ENV_VARS" | jq -r '.STATE_TABLE // "node-fleet-state"')
+STATE_DATA=$(aws dynamodb get-item --table-name "$TABLE_NAME" --key "{\"cluster_id\":{\"S\":\"${CLUSTER_ID}\"}}" --output json 2>/dev/null)
 
 if [ -n "$STATE_DATA" ]; then
     echo "   ✅ DynamoDB state table accessible"
@@ -207,8 +213,8 @@ fi
 # Requirement 9: EventBridge Schedule
 echo ""
 echo "9️⃣  EVENTBRIDGE SCHEDULE (Req: Every 2 minutes)"
-SCHEDULE_RULE=$(aws events describe-rule --name "node-fleet-dev-autoscaler-schedule" --output json 2>/dev/null)
-if [ -n "$SCHEDULE_RULE" ]; then
+SCHEDULE_RULE=$(aws events list-rules --name-prefix "${CLUSTER_ID}-autoscaler" --output json 2>/dev/null | jq -r '.Rules[0] // empty')
+if [ -n "$SCHEDULE_RULE" ] && [ "$SCHEDULE_RULE" != "null" ]; then
     SCHEDULE=$(echo "$SCHEDULE_RULE" | jq -r '.ScheduleExpression')
     STATE=$(echo "$SCHEDULE_RULE" | jq -r '.State')
     

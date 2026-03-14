@@ -1,7 +1,10 @@
 import yaml
 import urllib.parse
+import os
 
-password = 'ED($is6xAkAXg4o&nCWhJ%M)&=7Xh8!['
+password = os.environ.get('PROMETHEUS_PASSWORD')
+if not password:
+    raise SystemExit("Error: Set PROMETHEUS_PASSWORD environment variable before running this script")
 encoded_password = urllib.parse.quote(password)
 user = "prometheus-admin"
 

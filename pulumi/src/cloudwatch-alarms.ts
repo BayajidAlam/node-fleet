@@ -5,6 +5,7 @@ import { autoscalerLambda } from "./lambda";
 
 const config = new pulumi.Config("node-fleet");
 const clusterName = config.require("clusterName");
+const maxNodes = config.getNumber("maxNodes") || 10;
 
 // Critical Alarms (SNS → Email/SMS + Slack)
 
@@ -23,7 +24,7 @@ export const scalingFailureAlarm = new aws.cloudwatch.MetricAlarm(
     alarmDescription: "Alert when 3+ scaling failures occur in 15 minutes",
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
-  }
+  },
 );
 
 // 2. CPU Overload Alarm - Cluster CPU > 90% for 5+ minutes
@@ -42,7 +43,7 @@ export const cpuOverloadAlarm = new aws.cloudwatch.MetricAlarm(
       "Alert when cluster CPU exceeds 90% for 5+ minutes (capacity exhausted)",
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
-  }
+  },
 );
 
 // 3. At Max Capacity Alarm - Node count = 10 for 10+ minutes
@@ -56,12 +57,12 @@ export const maxCapacityAlarm = new aws.cloudwatch.MetricAlarm(
     namespace: "NodeFleet/Autoscaler",
     period: 300, // 5 minutes (2 periods = 10 minutes)
     statistic: "Average",
-    threshold: 10,
+    threshold: maxNodes,
     alarmDescription:
-      "Alert when node count reaches maximum (10) for 10+ minutes - cannot scale further",
+      `Alert when node count reaches maximum (${maxNodes}) for 10+ minutes - cannot scale further`,
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
-  }
+  },
 );
 
 // 4. Node Join Failure Alarm - New instance not Ready after 5 minutes
@@ -80,7 +81,7 @@ export const nodeJoinFailureAlarm = new aws.cloudwatch.MetricAlarm(
       "Alert when new node takes longer than 5 minutes to become Ready",
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
-  }
+  },
 );
 
 // Warning Alarms (Slack only)
@@ -101,7 +102,7 @@ export const highMemoryAlarm = new aws.cloudwatch.MetricAlarm(
       "Warning: Cluster memory utilization exceeds 80% for 10 minutes",
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
-  }
+  },
 );
 
 // 6. Lambda Timeout Warning - Execution time > 50 seconds
@@ -123,7 +124,7 @@ export const lambdaTimeoutAlarm = new aws.cloudwatch.MetricAlarm(
     dimensions: {
       FunctionName: autoscalerLambda.name,
     },
-  }
+  },
 );
 
 // 7. Lambda Errors Alarm - Any Lambda errors
@@ -144,7 +145,7 @@ export const lambdaErrorAlarm = new aws.cloudwatch.MetricAlarm(
     dimensions: {
       FunctionName: autoscalerLambda.name,
     },
-  }
+  },
 );
 
 // 8. Pending Pods Alarm - Pending pods for extended period
@@ -163,7 +164,7 @@ export const pendingPodsAlarm = new aws.cloudwatch.MetricAlarm(
       "Alert when pods remain pending for 6+ minutes (autoscaler may not be responding)",
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
-  }
+  },
 );
 
 // Export alarm ARNs

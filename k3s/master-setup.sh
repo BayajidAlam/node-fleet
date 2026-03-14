@@ -45,8 +45,8 @@ PROM_CREDS=$(aws secretsmanager get-secret-value \
   --region ap-southeast-1 \
   --query SecretString --output text)
 
-PROM_USER=$(echo $PROM_CREDS | jq -r '.username')
-PROM_PASS=$(echo $PROM_CREDS | jq -r '.password')
+PROM_USER=$(echo "$PROM_CREDS" | jq -r '.username')
+PROM_PASS=$(echo "$PROM_CREDS" | jq -r '.password')
 
 # Generate bcrypt hash for password (using htpasswd)
 sudo apt-get install -y apache2-utils
@@ -234,7 +234,7 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 3000
+      nodePort: 30300
 EOF
 
 # Install Ingress Nginx (Required for Application Metrics)

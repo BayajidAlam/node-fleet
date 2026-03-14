@@ -32,7 +32,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   role: lambdaRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
   s3Key: lambdaPackage.key,
-  s3ObjectVersion: lambdaPackage.versionId,
+  s3ObjectVersion: lambdaPackage.version,
   timeout: 60, // 60 seconds (per spec)
   memorySize: 256, // 256 MB (per spec)
 
@@ -51,7 +51,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
       PROMETHEUS_URL: pulumi.interpolate`http://${masterPrivateIp}:30090`,
       STATE_TABLE: stateTable.name,
       METRICS_HISTORY_TABLE: metricsHistoryTable.name,
-      MIN_NODES: "2", // Minimum WORKER nodes (not counting master) - total cluster = 3
+      MIN_NODES: minNodes.toString(), // Minimum WORKER nodes (not counting master) - total cluster = 3
       MAX_NODES: maxNodes.toString(), // Maximum WORKER nodes (not counting master)
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.id,
       WORKER_SPOT_TEMPLATE_ID: workerSpotTemplate.id,
@@ -196,7 +196,6 @@ export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {
   role: schedulerRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
   s3Key: lambdaPackage.key,
-  s3ObjectVersion: lambdaPackage.versionId,
   timeout: 60,
   memorySize: 256,
   environment: {

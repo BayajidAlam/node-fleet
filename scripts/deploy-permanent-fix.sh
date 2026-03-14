@@ -23,7 +23,7 @@ echo "   • Add ENABLE_PREDICTIVE_SCALING=true"
 echo "   • Add ENABLE_CUSTOM_METRICS=false"
 echo ""
 echo "2. CloudWatch Metrics:"
-echo "   • Namespace: NodeFleet/Autoscaler → node-fleet"
+echo "   • Namespace: NodeFleet/Autoscaler (matches autoscaler.py output)"
 echo "   • (Matches dashboard expectations)"
 echo ""
 echo "3. EventBridge Schedule:"
@@ -114,7 +114,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "STEP 3: Verify Lambda Configuration"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-FUNCTION_NAME="node-fleet-dev-autoscaler"
+FUNCTION_NAME=$(pulumi stack output autoscalerFunctionName 2>/dev/null || echo "node-fleet-autoscaler")
 
 echo "→ Checking Lambda environment variables..."
 aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --query 'Environment.Variables' --output json > /tmp/lambda-config.json
@@ -136,17 +136,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "STEP 4: Wait for Metrics Publication"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-echo "→ Waiting for Lambda to publish metrics to node-fleet namespace..."
+echo "→ Waiting for Lambda to publish metrics to NodeFleet/Autoscaler namespace..."
 echo "   (Next execution in ~2 minutes)"
 
 sleep 130  # Wait for next Lambda execution
 
 echo "→ Checking CloudWatch metrics..."
-METRIC_COUNT=$(aws cloudwatch list-metrics --namespace node-fleet --output json | jq '.Metrics | length')
+METRIC_COUNT=$(aws cloudwatch list-metrics --namespace "NodeFleet/Autoscaler" --output json | jq '.Metrics | length')
 
 if [ "$METRIC_COUNT" -gt 0 ]; then
-    echo "   ✅ Found $METRIC_COUNT metrics in node-fleet namespace"
-    aws cloudwatch list-metrics --namespace node-fleet --output json | jq -r '.Metrics[].MetricName' | sort -u | sed 's/^/      • /'
+    echo "   ✅ Found $METRIC_COUNT metrics in NodeFleet/Autoscaler namespace"
+    aws cloudwatch list-metrics --namespace "NodeFleet/Autoscaler" --output json | jq -r '.Metrics[].MetricName' | sort -u | sed 's/^/      • /'
 else
     echo "   ⚠️  No metrics yet. Check Lambda logs:"
     echo "      aws logs tail /aws/lambda/$FUNCTION_NAME --since 5m"
@@ -159,12 +159,12 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 MASTER_IP=$(pulumi stack output masterPublicIpAddress)
 
-echo "→ Grafana is available at: http://$MASTER_IP:30030"
+echo "→ Grafana is available at: http://$MASTER_IP:30300"
 echo ""
 echo "Manual steps required (one-time setup):"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "1. Open Grafana: http://$MASTER_IP:30030"
+echo "1. Open Grafana: http://$MASTER_IP:30300"
 echo ""
 echo "2. Login (try these credentials):"
 echo "   • admin / admin"
@@ -191,7 +191,7 @@ echo "   ④ Click 'Import'"
 echo ""
 echo "5. Verify Data:"
 echo "   • Dashboards should show live metrics within 2-5 minutes"
-echo "   • If 'No data', check namespace in queries = 'node-fleet'"
+echo "   • If 'No data', check namespace in queries = 'NodeFleet/Autoscaler'"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -245,8 +245,8 @@ echo "  4. Verify autoscaler behavior with lower MIN_NODES"
 echo ""
 echo "Monitoring:"
 echo "  • Lambda logs: aws logs tail /aws/lambda/$FUNCTION_NAME --follow"
-echo "  • Grafana: http://$MASTER_IP:30030"
-echo "  • CloudWatch: aws cloudwatch list-metrics --namespace node-fleet"
+echo "  • Grafana: http://$MASTER_IP:30300"
+echo "  • CloudWatch: aws cloudwatch list-metrics --namespace NodeFleet/Autoscaler"
 echo ""
 echo "Documentation:"
 echo "  • DASHBOARD_FIX_SUMMARY.md - Detailed fix explanation"

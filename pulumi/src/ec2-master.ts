@@ -44,10 +44,11 @@ export const masterInstance = new aws.ec2.Instance(
     rootBlockDevice: {
       volumeSize: 30,
       volumeType: "gp3",
+      encrypted: true,
       deleteOnTermination: true,
     },
   },
-  { dependsOn: [keyPair], ignoreChanges: ["userData"] }
+  { dependsOn: [keyPair], ignoreChanges: ["userData"] },
 );
 
 export const masterPublicIp = masterInstance.publicIp;

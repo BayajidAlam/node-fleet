@@ -96,7 +96,7 @@ pulumi stack init node-fleet-dev --non-interactive 2>/dev/null || pulumi stack s
 
 # Configure Pulumi
 echo -e "${BLUE}⚙️  Configuring Pulumi stack...${NC}"
-pulumi config set aws:region ap-south-1
+pulumi config set aws:region ap-southeast-1
 pulumi config set node-fleet:clusterName "node-fleet-prod"
 pulumi config set node-fleet:minNodes 2
 pulumi config set node-fleet:maxNodes 10

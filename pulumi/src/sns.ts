@@ -38,6 +38,7 @@ def handler(event, context):
 `;
 
 export const slackNotifierLambda = new aws.lambda.Function("slack-notifier", {
+  name: `${clusterName}-slack-notifier`,
   runtime: "python3.11",
   handler: "index.handler",
   role: lambdaRole.arn,

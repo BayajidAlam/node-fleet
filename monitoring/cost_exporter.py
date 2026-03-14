@@ -391,7 +391,8 @@ class EnhancedCostExporter:
         print(f"Hourly: ${total_hourly:.4f} | Daily: ${total_daily:.2f} | Monthly: ${total_monthly:.2f}")
         print(f"Spot Savings: ${savings:.4f}/hr ({percentage:.1f}%)")
         print(f"Budget: {budget_used:.1f}% used, ${budget_remaining:.2f} remaining")
-        print(f"Cost/Pod: ${total_hourly / pod_count:.6f} | Cost/CPU: ${cost_per_cpu:.4f} | Cost/GB: ${cost_per_gb:.4f}")
+        cost_per_pod_val = total_hourly / pod_count if pod_count > 0 else 0
+        print(f"Cost/Pod: ${cost_per_pod_val:.6f} | Cost/CPU: ${cost_per_cpu:.4f} | Cost/GB: ${cost_per_gb:.4f}")
         print("="*30)
     
     def run(self, interval: int = 30):

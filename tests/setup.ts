@@ -4,7 +4,7 @@
  */
 
 // Set test environment variables
-process.env.AWS_REGION = "ap-south-1";
+process.env.AWS_REGION = "ap-southeast-1";
 process.env.CLUSTER_ID = "node-fleet-test";
 process.env.NODE_ENV = "test";
 

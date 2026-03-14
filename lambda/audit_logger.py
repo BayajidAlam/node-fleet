@@ -126,7 +126,10 @@ def deserialize_dynamodb_item(item: Dict) -> Dict:
         elif 'M' in value_obj:
             result[key] = deserialize_dynamodb_item(value_obj['M'])
         elif 'L' in value_obj:
-            result[key] = [deserialize_dynamodb_item({'item': v})['item'] for v in value_obj['L']]
+            result[key] = [
+                deserialize_dynamodb_item(v['M']) if 'M' in v else v.get('S') or v.get('N') or v.get('BOOL')
+                for v in value_obj['L']
+            ]
     
     return result
 

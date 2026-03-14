@@ -1,8 +1,15 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: prometheus-basic-auth
-  namespace: monitoring
-type: Opaque
-stringData:
-  auth: "admin:$2b$10$6rh/85.e06iFC6kAhDagru8Kc1rH3sYnq1miSijL0oHwQQk.fbgMS"
+# This secret is generated dynamically by k3s/master-setup.sh at cluster boot time.
+# It is created from credentials fetched from AWS Secrets Manager (node-fleet/prometheus-auth)
+# and MUST NOT be applied manually — master-setup.sh runs:
+#   kubectl create secret generic prometheus-auth --from-file=web.yml=...
+#
+# DO NOT apply this file directly. It exists only as a reference for the secret schema.
+#
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: prometheus-basic-auth
+#   namespace: monitoring
+# type: Opaque
+# stringData:
+#   auth: "<bcrypt-hash-generated-at-runtime>"

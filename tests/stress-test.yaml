@@ -13,14 +13,14 @@ spec:
         app: scaling-stress
     spec:
       containers:
-      - name: stress
-        image: polinux/stress
-        command: ["stress"]
-        args: ["--cpu", "1", "--timeout", "300s"]
-        resources:
-          requests:
-            cpu: "250m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "256Mi"
+        - name: stress
+          image: polinux/stress:1.0.4
+          command: ["stress"]
+          args: ["--cpu", "1", "--timeout", "300s"]
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

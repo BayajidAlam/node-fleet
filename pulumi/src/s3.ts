@@ -7,12 +7,12 @@ const clusterName = config.require("clusterName");
 // S3 bucket for Lambda deployment packages
 export const lambdaArtifactsBucket = new aws.s3.Bucket("lambda-artifacts", {
   bucket: `${clusterName}-lambda-artifacts-${pulumi.getStack()}`,
-  
+
   // Enable versioning for rollback capability
   versioning: {
     enabled: true,
   },
-  
+
   // Encryption at rest
   serverSideEncryptionConfiguration: {
     rule: {
@@ -21,15 +21,17 @@ export const lambdaArtifactsBucket = new aws.s3.Bucket("lambda-artifacts", {
       },
     },
   },
-  
+
   // Lifecycle to clean up old versions
-  lifecycleRules: [{
-    enabled: true,
-    noncurrentVersionExpiration: {
-      days: 30,
+  lifecycleRules: [
+    {
+      enabled: true,
+      noncurrentVersionExpiration: {
+        days: 30,
+      },
     },
-  }],
-  
+  ],
+
   tags: {
     Name: `${clusterName}-lambda-artifacts`,
     Project: "node-fleet",
@@ -54,15 +56,6 @@ export const lambdaPackage = new aws.s3.BucketObject("lambda-package", {
   bucket: lambdaArtifactsBucket.id,
   key: "lambda-deployment.zip",
   source: new pulumi.asset.FileAsset("/tmp/lambda-deployment.zip"),
-  
-  // Use content hash for versioning
-  etag: pulumi.output("/tmp/lambda-deployment.zip").apply(() => {
-    const crypto = require("crypto");
-    const fs = require("fs");
-    const fileBuffer = fs.readFileSync("/tmp/lambda-deployment.zip");
-    return crypto.createHash("md5").update(fileBuffer).digest("hex");
-  }),
-  
   tags: {
     Name: "lambda-deployment-package",
     Project: "node-fleet",

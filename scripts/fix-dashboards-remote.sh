@@ -4,8 +4,13 @@
 #
 set -e
 
-MASTER_IP="47.129.152.2"
-KEY_FILE="${1:-node-fleet-key.pem}"
+MASTER_IP="${MASTER_IP:-${1}}"
+if [ -z "$MASTER_IP" ]; then
+  echo "❌ Error: MASTER_IP env var or first argument is required"
+  echo "Usage: MASTER_IP=<ip> ./scripts/fix-dashboards-remote.sh  OR  ./scripts/fix-dashboards-remote.sh <ip> [key.pem]"
+  exit 1
+fi
+KEY_FILE="${2:-node-fleet-key.pem}"
 
 echo "========================================"
 echo "Grafana Dashboard Quick Fix"
@@ -35,8 +40,8 @@ ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes ubuntu@${MA
     "cd /home/ubuntu && sudo ./fix-grafana-dashboards.sh"
 
 echo ""
-echo "✅ Done! Access Grafana at: http://${MASTER_IP}:30030"
+echo "✅ Done! Access Grafana at: http://${MASTER_IP}:30300"
 echo "   Username: admin"
 echo "   Password: (run this to get it)"
-echo "   kubectl get secret -n monitoring grafana-admin -o jsonpath='{.data.password}' | base64 -d"
+echo "   kubectl get secret -n monitoring grafana-admin-secret -o jsonpath='{.data.admin-password}' | base64 -d"
 echo ""

@@ -5,7 +5,7 @@
 #
 set -e
 
-GRAFANA_URL="http://localhost:30030"
+GRAFANA_URL="http://localhost:30300"
 GRAFANA_USER="admin"
 AWS_REGION="ap-southeast-1"
 
@@ -13,8 +13,12 @@ echo "=========================================="
 echo "Grafana CloudWatch Configuration"
 echo "=========================================="
 
-# Get Grafana password
-GRAFANA_PASSWORD=$(kubectl get secret -n monitoring grafana-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "admin")
+# Get Grafana password from correct secret name/key
+GRAFANA_PASSWORD=$(kubectl get secret -n monitoring grafana-admin-secret -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo "")
+if [ -z "$GRAFANA_PASSWORD" ]; then
+  echo "❌ ERROR: Could not retrieve Grafana password from secret grafana-admin-secret"
+  exit 1
+fi
 
 echo "Using Grafana credentials: $GRAFANA_USER / (password from secret)"
 
@@ -129,9 +133,9 @@ echo "=========================================="
 echo "✅ Dashboard Configuration Complete!"
 echo "=========================================="
 echo ""
-echo "Access Grafana at: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):30030"
+echo "Access Grafana at: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):30300"
 echo "Username: $GRAFANA_USER"
-echo "Password: $GRAFANA_PASSWORD"
+echo "Password: (retrieve with: kubectl get secret -n monitoring grafana-admin-secret -o jsonpath='{.data.admin-password}' | base64 -d)"
 echo ""
 echo "Note: Dashboards may take 1-2 minutes to show data as Lambda publishes metrics every 5 minutes"
 echo ""

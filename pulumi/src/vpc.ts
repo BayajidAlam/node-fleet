@@ -94,7 +94,7 @@ export const publicSubnet1Association = new aws.ec2.RouteTableAssociation(
   {
     subnetId: publicSubnet1.id,
     routeTableId: publicRouteTable.id,
-  }
+  },
 );
 
 export const publicSubnet2Association = new aws.ec2.RouteTableAssociation(
@@ -102,7 +102,7 @@ export const publicSubnet2Association = new aws.ec2.RouteTableAssociation(
   {
     subnetId: publicSubnet2.id,
     routeTableId: publicRouteTable.id,
-  }
+  },
 );
 
 // Elastic IP for NAT Gateway
@@ -115,14 +115,18 @@ export const natEip = new aws.ec2.Eip("nat-eip", {
 });
 
 // NAT Gateway in Public Subnet 1
-export const natGateway = new aws.ec2.NatGateway("nat-gateway", {
-  allocationId: natEip.id,
-  subnetId: publicSubnet1.id,
-  tags: {
-    Name: `${clusterName}-nat-gw`,
-    Project: "node-fleet",
+export const natGateway = new aws.ec2.NatGateway(
+  "nat-gateway",
+  {
+    allocationId: natEip.id,
+    subnetId: publicSubnet1.id,
+    tags: {
+      Name: `${clusterName}-nat-gw`,
+      Project: "node-fleet",
+    },
   },
-}, { dependsOn: [igw] }); // Ensure IGW exists first
+  { dependsOn: [igw] },
+); // Ensure IGW exists first
 
 // Private Route Table
 export const privateRouteTable = new aws.ec2.RouteTable("private-rt", {
@@ -145,7 +149,7 @@ export const privateSubnet1Association = new aws.ec2.RouteTableAssociation(
   {
     subnetId: privateSubnet1.id,
     routeTableId: privateRouteTable.id,
-  }
+  },
 );
 
 export const privateSubnet2Association = new aws.ec2.RouteTableAssociation(
@@ -153,13 +157,13 @@ export const privateSubnet2Association = new aws.ec2.RouteTableAssociation(
   {
     subnetId: privateSubnet2.id,
     routeTableId: privateRouteTable.id,
-  }
+  },
 );
 
 // DynamoDB VPC Endpoint (Gateway)
 export const dynamodbEndpoint = new aws.ec2.VpcEndpoint("dynamodb-endpoint", {
   vpcId: vpc.id,
-  serviceName: `com.amazonaws.ap-southeast-1.dynamodb`,
+  serviceName: pulumi.interpolate`com.amazonaws.${aws.getRegionOutput().name}.dynamodb`,
   vpcEndpointType: "Gateway",
   routeTableIds: [privateRouteTable.id],
   tags: {

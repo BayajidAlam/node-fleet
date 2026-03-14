@@ -220,11 +220,3 @@ export const masterSsmPolicy = new aws.iam.RolePolicyAttachment(
     policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
   },
 );
-
-export const workerBillingPolicy = new aws.iam.RolePolicyAttachment(
-  "worker-billing-policy",
-  {
-    role: workerRole.name,
-    policyArn: "arn:aws:iam::aws:policy/AWSBillingReadOnlyAccess",
-  },
-);

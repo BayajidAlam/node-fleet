@@ -20,10 +20,10 @@ RULE_NAME = os.environ.get('RULE_NAME')
 STATE_TABLE = os.environ.get('STATE_TABLE')
 CLUSTER_ID = os.environ.get('CLUSTER_ID', 'node-fleet-cluster')
 
-# Scheduling thresholds (pinned to 1 min for precise scaling timing)
+# Scheduling thresholds: high=1min (aggressive), normal=2min, low=5min (cost-saving)
 HIGH_ACTIVITY_INTERVAL = 1
-NORMAL_INTERVAL = 1
-LOW_ACTIVITY_INTERVAL = 1
+NORMAL_INTERVAL = 2
+LOW_ACTIVITY_INTERVAL = 5
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

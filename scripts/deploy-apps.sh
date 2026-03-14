@@ -51,7 +51,7 @@ spec:
     spec:
       containers:
       - name: prometheus
-        image: prom/prometheus:latest
+        image: prom/prometheus:v2.48.0
         args:
           - '--config.file=/etc/prometheus/prometheus.yml'
           - '--storage.tsdb.path=/prometheus'
@@ -103,12 +103,15 @@ spec:
     spec:
       containers:
       - name: grafana
-        image: grafana/grafana:latest
+        image: grafana/grafana:10.2.3
         ports:
         - containerPort: 3000
         env:
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: "admin123"
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin-secret
+              key: admin-password
 ---
 apiVersion: v1
 kind: Service
@@ -122,7 +125,7 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 30091
+      nodePort: 30300
 EOF
 
 echo "Deploying demo app..."
@@ -182,8 +185,9 @@ sudo k3s kubectl get pods -n default
 sudo k3s kubectl get svc -n monitoring
 sudo k3s kubectl get svc -n default
 
+MASTER_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "<master-ip>")
 echo ""
 echo "Access URLs:"
-echo "  Prometheus: http://18.142.249.81:30090"
-echo "  Grafana: http://18.142.249.81:30091 (admin/admin123)"
-echo "  Demo App: http://18.142.249.81:30080"
+echo "  Prometheus: http://${MASTER_IP}:30090"
+echo "  Grafana:    http://${MASTER_IP}:30300"
+echo "  Demo App:   http://${MASTER_IP}:30080"

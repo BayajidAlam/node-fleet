@@ -10,21 +10,21 @@ export const masterSg = new aws.ec2.SecurityGroup("master-sg", {
   vpcId: vpc.id,
   description: "Security group for K3s master node",
   ingress: [
-    // SSH from anywhere (can be restricted to your IP)
+    // SSH from VPC only (use bastion or VPN for external access)
     {
       protocol: "tcp",
       fromPort: 22,
       toPort: 22,
-      cidrBlocks: ["0.0.0.0/0"],
-      description: "SSH",
+      cidrBlocks: ["10.0.0.0/16"],
+      description: "SSH from VPC",
     },
-    // K3s API server
+    // K3s API server from VPC only (Lambda is in VPC)
     {
       protocol: "tcp",
       fromPort: 6443,
       toPort: 6443,
-      cidrBlocks: ["0.0.0.0/0"],
-      description: "K3s API",
+      cidrBlocks: ["10.0.0.0/16"],
+      description: "K3s API from VPC",
     },
     // Prometheus NodePort
     {
@@ -95,13 +95,13 @@ export const workerSg = new aws.ec2.SecurityGroup("worker-sg", {
   vpcId: vpc.id,
   description: "Security group for K3s worker nodes",
   ingress: [
-    // SSH from anywhere
+    // SSH from VPC only
     {
       protocol: "tcp",
       fromPort: 22,
       toPort: 22,
-      cidrBlocks: ["0.0.0.0/0"],
-      description: "SSH",
+      cidrBlocks: ["10.0.0.0/16"],
+      description: "SSH from VPC",
     },
     // Flannel VXLAN
     {

@@ -44,6 +44,10 @@ echo "✅ Master node found at: $MASTER_IP"
 # Install K3s agent
 echo "🎯 Joining K3s cluster..."
 curl -sfL https://get.k3s.io | K3S_URL=https://${MASTER_IP}:6443 K3S_TOKEN=${K3S_TOKEN} sh -
+if [ $? -ne 0 ]; then
+  echo "❌ K3s agent install failed"
+  exit 1
+fi
 
 # Wait for node to be ready
 echo "⏳ Waiting for node to join cluster..."

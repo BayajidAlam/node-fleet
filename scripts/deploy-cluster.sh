@@ -4,8 +4,13 @@ set -e
 # Automated K3s Cluster Setup and Application Deployment
 # This script waits for K3s initialization and deploys all monitoring and demo apps
 
-MASTER_IP="18.142.249.81"
-SSH_KEY="node-fleet-key.pem"
+MASTER_IP="${MASTER_IP:-${1}}"
+if [ -z "$MASTER_IP" ]; then
+  echo "❌ Error: MASTER_IP env var or first argument is required"
+  echo "Usage: MASTER_IP=<ip> ./deploy-cluster.sh  OR  ./deploy-cluster.sh <ip>"
+  exit 1
+fi
+SSH_KEY="${SSH_KEY:-node-fleet-key.pem}"
 MAX_RETRIES=20
 RETRY_DELAY=30
 
@@ -93,6 +98,6 @@ echo "Demo App:"
 kubectl get pods,svc -l app=demo-app
 echo ""
 echo "Prometheus URL: http://$MASTER_IP:30090"
-echo "Grafana URL: http://$MASTER_IP:30091"
+echo "Grafana URL:    http://$MASTER_IP:30300"
 echo ""
 echo "✓ Automated deployment complete!"
