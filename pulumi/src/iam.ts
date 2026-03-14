@@ -44,6 +44,15 @@ export const masterPolicy = new aws.iam.RolePolicy("master-policy", {
   }),
 });
 
+// Allow SSM agent on master to receive Run Commands from Lambda
+export const masterSsmPolicy = new aws.iam.RolePolicyAttachment(
+  "master-ssm-policy",
+  {
+    role: masterRole.name,
+    policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+  },
+);
+
 export const masterInstanceProfile = new aws.iam.InstanceProfile(
   "master-instance-profile",
   {
@@ -150,6 +159,14 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
             "dynamodb:PutItem",
             "dynamodb:UpdateItem",
             "dynamodb:Query",
+          ],
+          Resource: "*",
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "s3:GetObject",
+            "s3:ListBucket",
           ],
           Resource: "*",
         },

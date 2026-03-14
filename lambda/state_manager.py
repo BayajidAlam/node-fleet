@@ -185,3 +185,63 @@ class StateManager:
         except ClientError as e:
             logger.error(f"Error updating metrics history: {str(e)}")
             # Don't raise - metric history failure shouldn't kill the autoscaler
+
+    def store_drain_state(self, draining_instances: list):
+        """
+        Persist async drain state so the next Lambda invocation can complete termination.
+        draining_instances: list of dicts with keys: instance_id, node_name, command_id,
+                            master_instance_id, start_time
+        """
+        try:
+            from decimal import Decimal
+            # Convert timestamps to Decimal for DynamoDB
+            items = []
+            for d in draining_instances:
+                items.append({
+                    'instance_id': d['instance_id'],
+                    'node_name': d['node_name'],
+                    'command_id': d['command_id'],
+                    'master_instance_id': d.get('master_instance_id', ''),
+                    'start_time': Decimal(str(d.get('start_time', 0))),
+                })
+            self.table.update_item(
+                Key={'cluster_id': self.cluster_id},
+                UpdateExpression='SET draining_instances = :items',
+                ExpressionAttributeValues={':items': items}
+            )
+            logger.info(f"Stored drain state for {len(items)} instance(s)")
+        except ClientError as e:
+            logger.error(f"Error storing drain state: {str(e)}")
+
+    def get_pending_drains(self) -> list:
+        """Return list of instances currently being drained (pending termination)."""
+        try:
+            state = self.get_state()
+            raw = state.get('draining_instances', [])
+            result = []
+            for d in raw:
+                result.append({
+                    'instance_id': str(d.get('instance_id', '')),
+                    'node_name': str(d.get('node_name', '')),
+                    'command_id': str(d.get('command_id', '')),
+                    'master_instance_id': str(d.get('master_instance_id', '')),
+                    'start_time': int(d.get('start_time', 0)),
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Error reading pending drains: {e}")
+            return []
+
+    def clear_drain_instance(self, instance_id: str):
+        """Remove a specific instance from the draining list after termination."""
+        try:
+            pending = self.get_pending_drains()
+            updated = [d for d in pending if d['instance_id'] != instance_id]
+            self.table.update_item(
+                Key={'cluster_id': self.cluster_id},
+                UpdateExpression='SET draining_instances = :items',
+                ExpressionAttributeValues={':items': updated}
+            )
+            logger.info(f"Cleared drain state for {instance_id}")
+        except ClientError as e:
+            logger.error(f"Error clearing drain state for {instance_id}: {str(e)}")

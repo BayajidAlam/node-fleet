@@ -57,7 +57,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
       WORKER_SPOT_TEMPLATE_ID: workerSpotTemplate.id,
       SPOT_PERCENTAGE: "70",
       ENABLE_PREDICTIVE_SCALING: "true",
-      ENABLE_CUSTOM_METRICS: "false",
+      ENABLE_CUSTOM_METRICS: "true",
       SNS_TOPIC_ARN: slackTopic.arn,
     },
   },
@@ -111,6 +111,19 @@ export const lambdaLogGroup = new aws.cloudwatch.LogGroup("autoscaler-logs", {
     Project: "node-fleet",
   },
 });
+
+// Explicitly configure Lambda retry: 0 retries for async invocations
+// (EventBridge will retry via DLQ; we don't want duplicate scale operations)
+export const lambdaInvokeConfig = new aws.lambda.FunctionEventInvokeConfig(
+  "autoscaler-invoke-config",
+  {
+    functionName: autoscalerLambda.name,
+    maximumRetryAttempts: 0, // No automatic retries — DLQ handles failed events
+    destinationConfig: {
+      onFailure: { destination: autoscalerDlq.arn },
+    },
+  },
+);
 
 // EventBridge rule for EC2 Spot Instance Interruption Warning
 export const spotInterruptionRule = new aws.cloudwatch.EventRule(

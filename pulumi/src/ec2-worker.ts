@@ -29,7 +29,7 @@ export const workerLaunchTemplate = new aws.ec2.LaunchTemplate(
   {
     namePrefix: "k3s-worker-",
     imageId: ubuntuAmi.then((ami) => ami.id),
-    instanceType: "t3.medium",
+    instanceType: "t3.small",
     keyName: keyPair.keyName,
     vpcSecurityGroupIds: [workerSg.id],
     iamInstanceProfile: { name: workerInstanceProfile.name },
@@ -76,7 +76,7 @@ export const workerSpotTemplate = new aws.ec2.LaunchTemplate(
   {
     namePrefix: "k3s-worker-spot-",
     imageId: ubuntuAmi.then((ami) => ami.id),
-    instanceType: "t3.medium",
+    instanceType: "t3.small",
     keyName: keyPair.keyName,
     vpcSecurityGroupIds: [workerSg.id],
     iamInstanceProfile: { name: workerInstanceProfile.name },
@@ -86,7 +86,7 @@ export const workerSpotTemplate = new aws.ec2.LaunchTemplate(
     instanceMarketOptions: {
       marketType: "spot",
       spotOptions: {
-        maxPrice: "0.0416", // t3.medium on-demand price as max
+        maxPrice: "0.023", // t3.small on-demand price as max
         spotInstanceType: "one-time",
         instanceInterruptionBehavior: "terminate",
       },
@@ -126,7 +126,7 @@ export const workerSpotTemplateId = workerSpotTemplate.id;
 // to reach the minimum of 2 workers. If you have no workers, it will create both.
 export const initialWorker1 = new aws.ec2.Instance("initial-worker-1", {
   ami: ubuntuAmi.then((ami) => ami.id),
-  instanceType: "t3.medium",
+  instanceType: "t3.small",
   keyName: keyPair.keyName,
   subnetId: publicSubnet1.id, // AZ-1
   vpcSecurityGroupIds: [workerSg.id],
@@ -150,7 +150,7 @@ export const initialWorker1 = new aws.ec2.Instance("initial-worker-1", {
 
 export const initialWorker2 = new aws.ec2.Instance("initial-worker-2", {
   ami: ubuntuAmi.then((ami) => ami.id),
-  instanceType: "t3.medium",
+  instanceType: "t3.small",
   keyName: keyPair.keyName,
   subnetId: publicSubnet2.id, // AZ-2 (different AZ for HA)
   vpcSecurityGroupIds: [workerSg.id],

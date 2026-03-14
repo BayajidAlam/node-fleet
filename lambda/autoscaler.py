@@ -1,12 +1,18 @@
 """
 Main Lambda handler for K3s autoscaler
-Orchestrates the 6-step scaling workflow with predictive scaling:
+Orchestrates the 7-step scaling workflow with predictive scaling:
+0. Complete pending async drain operations from previous invocations (SSM-based)
 1. Check DynamoDB lock — exit if scaling already in progress
 2. Query Prometheus metrics (CPU, memory, pending pods)
 3. Evaluate scaling conditions with history (reactive + predictive)
-4. Execute EC2 scaling (scale_up / scale_down)
+4. Execute EC2 scaling (scale_up / scale_down — drain is async via SSM)
 5. Publish CloudWatch metrics and send Slack notification
 6. Release DynamoDB lock in finally block (always)
+
+Scale-down drain flow (keeps Lambda under 30s):
+  - Lambda initiates drain via SSM Run Command (non-blocking, returns in <5s)
+  - Drain state stored in DynamoDB (draining_instances attribute)
+  - Next Lambda invocation (2 min later) checks SSM status and terminates if done
 """
 
 import os
@@ -77,7 +83,26 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Main Lambda handler invoked by EventBridge every 2 minutes
     """
     logger.info(f"Autoscaler triggered for cluster: {CLUSTER_ID}")
-    
+
+    # Step 0: Complete any pending async drain operations from previous invocations
+    # (drain runs asynchronously via SSM; termination happens here once SSM confirms completion)
+    try:
+        logger.info("Step 0: Checking pending drain operations")
+        _state_manager_early = StateManager(STATE_TABLE, CLUSTER_ID)
+        _ec2_manager_early = EC2Manager(
+            worker_template_id=WORKER_LAUNCH_TEMPLATE_ID,
+            worker_spot_template_id=WORKER_SPOT_TEMPLATE_ID,
+            spot_percentage=SPOT_PERCENTAGE
+        )
+        terminated = _ec2_manager_early.complete_pending_drains(_state_manager_early)
+        if terminated:
+            logger.info(f"Completed termination of {len(terminated)} drained node(s): {terminated}")
+            send_notification(
+                f"🔵 Scale-down complete: Terminated {len(terminated)} node(s) {terminated} after successful drain"
+            )
+    except Exception as e:
+        logger.warning(f"Failed to check pending drains (non-fatal): {e}")
+
     # Handle Spot Instance Interruption
     if event.get("detail-type") == "EC2 Spot Instance Interruption Warning":
         logger.warning(f"RECEIVED SPOT INTERRUPT WARNING: {event}")
@@ -270,7 +295,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:  # scale_down
                 result = ec2_manager.scale_down(
                     nodes_to_remove=action["nodes"],
-                    reason=action["reason"]
+                    reason=action["reason"],
+                    state_manager=state_manager
                 )
             
             # Update state in DynamoDB

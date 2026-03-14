@@ -163,65 +163,67 @@ class EC2Manager:
             logger.error(f"Failed to scale up: {str(e)}")
             raise
     
-    def scale_down(self, nodes_to_remove: int, reason: str) -> Dict:
+    def scale_down(self, nodes_to_remove: int, reason: str, state_manager=None) -> Dict:
         """
-        Safely remove worker nodes
-        
-        Args:
-            nodes_to_remove: Number of nodes to remove
-            reason: Reason for scaling down
-        
-        Returns:
-            Dictionary with terminated instance details
+        Safely remove worker nodes.
+        Drain is initiated asynchronously via SSM (non-blocking).
+        Actual termination happens in the next Lambda invocation via complete_pending_drains().
         """
         logger.info(f"Scaling down: Removing {nodes_to_remove} nodes. Reason: {reason}")
-        
+
         try:
-            # Get all worker nodes
             worker_instances = self._get_worker_instances()
-            
+
             if len(worker_instances) <= nodes_to_remove:
                 logger.warning(f"Not enough workers to remove. Current: {len(worker_instances)}, Requested: {nodes_to_remove}")
-                nodes_to_remove = max(0, len(worker_instances) - 1)  # Keep at least 1 worker
-            
+                nodes_to_remove = max(0, len(worker_instances) - 1)
+
             if nodes_to_remove == 0:
                 return {"success": True, "instance_ids": [], "message": "No nodes removed"}
-            
-            # Select instances to terminate (prefer spot instances first)
+
             instances_to_terminate = self._select_instances_for_termination(
-                worker_instances, 
+                worker_instances,
                 nodes_to_remove
             )
-            
-            terminated_ids = []
-            
+
+            master_instance_id = self._get_master_instance_id()
+            draining = []
+
             for instance in instances_to_terminate:
                 instance_id = instance['InstanceId']
                 node_name = self._get_node_name_from_instance(instance_id)
-                
-                if node_name:
-                    # Drain node before termination
-                    logger.info(f"Draining node {node_name}")
-                    if not self._drain_node(node_name):
-                        logger.warning(f"Failed to drain {node_name}, skipping termination")
-                        continue
-                
-                # Terminate instance
-                logger.info(f"Terminating instance {instance_id}")
-                self.ec2_client.terminate_instances(InstanceIds=[instance_id])
-                terminated_ids.append(instance_id)
 
-                # Delete K8s Node Object (Prevent Ghost Nodes)
                 if node_name:
-                    self._delete_node(node_name)
-            
-            logger.info(f"Successfully terminated {len(terminated_ids)} instances: {terminated_ids}")
-            
+                    command_id = self._drain_node(node_name, instance_id)
+                    if command_id:
+                        drain_entry = {
+                            'instance_id': instance_id,
+                            'node_name': node_name,
+                            'command_id': command_id,
+                            'master_instance_id': master_instance_id,
+                            'start_time': int(time.time()),
+                        }
+                        draining.append(drain_entry)
+                        logger.info(f"Drain initiated for {node_name} (SSM: {command_id}). "
+                                    f"Termination will complete in next Lambda invocation.")
+                    else:
+                        logger.warning(f"Failed to initiate drain for {node_name}, skipping termination")
+                else:
+                    # No node name (not yet joined) — terminate immediately
+                    logger.info(f"No K8s node name for {instance_id}, terminating directly")
+                    self.ec2_client.terminate_instances(InstanceIds=[instance_id])
+
+            # Store drain state so next Lambda invocation can complete termination
+            if draining and state_manager:
+                state_manager.store_drain_state(draining)
+
             return {
                 "success": True,
-                "instance_ids": terminated_ids
+                "instance_ids": [d['instance_id'] for d in draining],
+                "draining": draining,
+                "message": f"Drain initiated for {len(draining)} node(s). Termination pending next invocation."
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to scale down: {str(e)}")
             raise
@@ -642,46 +644,130 @@ class EC2Manager:
             logger.error(f"SSH Execution Error: {e}")
             return False
 
-    def _drain_node(self, node_name: str, timeout: int = 300) -> bool:
-        """Drain node using SSH to master. Validates drain completion via exit code and output."""
-        import paramiko
-        import io
+    def _drain_node(self, node_name: str, instance_id: str, timeout: int = 300) -> str:
+        """
+        Drain node asynchronously via SSM Run Command on master.
+        Returns SSM command ID (non-blocking — Lambda does NOT wait for drain to finish).
+        The next Lambda invocation calls complete_pending_drains() to check status and terminate.
+        """
+        logger.info(f"Initiating async drain for {node_name} (instance {instance_id}) via SSM...")
 
-        logger.info(f"Draining node {node_name} via SSH (timeout={timeout}s)...")
-        cmd = f"sudo k3s kubectl drain {node_name} --ignore-daemonsets --delete-emptydir-data --force --timeout={timeout}s"
+        master_instance_id = self._get_master_instance_id()
+        if not master_instance_id:
+            logger.error("Cannot find master instance ID for SSM drain")
+            return None
+
+        cmd = (
+            f"sudo k3s kubectl cordon {node_name} && "
+            f"sudo k3s kubectl drain {node_name} "
+            f"--ignore-daemonsets --delete-emptydir-data --force --timeout={timeout}s && "
+            f"echo 'DRAIN_COMPLETE:{node_name}'"
+        )
 
         try:
-            private_key_str = self._get_ssh_key()
-            if not private_key_str:
-                logger.error("No SSH key available for drain")
-                return False
-
-            private_key = paramiko.RSAKey.from_private_key(io.StringIO(private_key_str))
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(hostname=self._get_master_ip(), username="ubuntu", pkey=private_key, timeout=10)
-
-            stdin, stdout, stderr = ssh.exec_command(cmd)
-            exit_status = stdout.channel.recv_exit_status()
-            out_str = stdout.read().decode().strip()
-            err_str = stderr.read().decode().strip()
-            ssh.close()
-
-            if exit_status != 0:
-                logger.error(f"Drain failed (exit {exit_status}): {err_str or out_str}")
-                return False
-
-            # Verify drain actually completed — kubectl prints "node/<name> drained" on success
-            if f"node/{node_name} drained" not in out_str and "drained" not in out_str:
-                logger.warning(f"Drain exit 0 but 'drained' not in output. Output: {out_str}")
-                return False
-
-            logger.info(f"Node {node_name} drained successfully")
-            return True
-
+            ssm_client = boto3.client('ssm')
+            response = ssm_client.send_command(
+                InstanceIds=[master_instance_id],
+                DocumentName="AWS-RunShellScript",
+                Parameters={"commands": [cmd]},
+                Comment=f"K3s drain {node_name} before termination",
+                TimeoutSeconds=timeout + 60,  # SSM timeout > drain timeout
+            )
+            command_id = response['Command']['CommandId']
+            logger.info(f"SSM drain command sent: {command_id} for node {node_name}")
+            return command_id
         except Exception as e:
-            logger.error(f"Drain SSH error for {node_name}: {e}")
-            return False
+            logger.error(f"Failed to send SSM drain command for {node_name}: {e}")
+            return None
+
+    def _check_drain_status(self, command_id: str, instance_id: str) -> str:
+        """
+        Check SSM command status for a pending drain.
+        Returns: 'Success', 'InProgress', 'Pending', or 'Failed'
+        """
+        try:
+            ssm_client = boto3.client('ssm')
+            response = ssm_client.get_command_invocation(
+                CommandId=command_id,
+                InstanceId=instance_id,
+            )
+            status = response.get('Status', 'Unknown')
+            logger.info(f"SSM drain command {command_id} status: {status}")
+            return status
+        except Exception as e:
+            logger.error(f"Failed to check SSM command {command_id}: {e}")
+            return 'Failed'
+
+    def _get_master_instance_id(self) -> str:
+        """Get master node EC2 instance ID by tag"""
+        try:
+            response = self.ec2_client.describe_instances(
+                Filters=[
+                    {'Name': 'tag:Role', 'Values': ['k3s-master']},
+                    {'Name': 'instance-state-name', 'Values': ['running']}
+                ]
+            )
+            reservations = response.get('Reservations', [])
+            if not reservations or not reservations[0].get('Instances'):
+                raise ValueError("No running k3s-master instance found")
+            instance_id = reservations[0]['Instances'][0]['InstanceId']
+            logger.info(f"Resolved master instance ID: {instance_id}")
+            return instance_id
+        except Exception as e:
+            logger.error(f"Failed to resolve master instance ID: {e}")
+            return None
+
+    def complete_pending_drains(self, state_manager) -> List[str]:
+        """
+        Check all pending drain operations in DynamoDB. If drain is complete,
+        terminate the instance and remove it from the pending list.
+        Called at start of each Lambda invocation BEFORE acquiring lock.
+        Returns list of newly terminated instance IDs.
+        """
+        terminated = []
+        pending = state_manager.get_pending_drains()
+        if not pending:
+            return terminated
+
+        logger.info(f"Checking {len(pending)} pending drain(s): {[p['instance_id'] for p in pending]}")
+
+        for drain_info in pending:
+            instance_id = drain_info['instance_id']
+            node_name = drain_info['node_name']
+            command_id = drain_info['command_id']
+            master_instance_id = drain_info.get('master_instance_id')
+
+            if not master_instance_id:
+                master_instance_id = self._get_master_instance_id()
+
+            if not master_instance_id:
+                logger.warning(f"Cannot check drain for {node_name}: no master instance ID")
+                continue
+
+            status = self._check_drain_status(command_id, master_instance_id)
+
+            if status == 'Success':
+                logger.info(f"Drain complete for {node_name} — terminating {instance_id}")
+                try:
+                    self.ec2_client.terminate_instances(InstanceIds=[instance_id])
+                    self._delete_node(node_name)
+                    state_manager.clear_drain_instance(instance_id)
+                    terminated.append(instance_id)
+                    logger.info(f"Terminated {instance_id} after successful drain")
+                except Exception as e:
+                    logger.error(f"Failed to terminate {instance_id} after drain: {e}")
+            elif status in ('InProgress', 'Pending', 'Delayed'):
+                elapsed = int(time.time()) - drain_info.get('start_time', int(time.time()))
+                logger.info(f"Drain still in progress for {node_name} (elapsed: {elapsed}s)")
+            else:
+                # Failed, Cancelled, TimedOut
+                logger.warning(
+                    f"Drain {status} for {node_name} ({command_id}). "
+                    f"Removing from pending list without terminating."
+                )
+                state_manager.clear_drain_instance(instance_id)
+
+        return terminated
 
     def _load_kube_config(self) -> bool:
         """
