@@ -4,7 +4,12 @@
 #
 set -e
 
-MASTER_IP="${1:-47.129.152.2}"
+MASTER_IP="${1}"
+if [ -z "$MASTER_IP" ]; then
+    echo "❌ ERROR: MASTER_IP required. Usage: $0 <master-ip>"
+    echo "   Get it with: pulumi -C pulumi stack output masterIp"
+    exit 1
+fi
 GRAFANA_PORT="30030"
 GRAFANA_URL="http://${MASTER_IP}:${GRAFANA_PORT}"
 GRAFANA_USER="admin"
@@ -13,13 +18,24 @@ echo "========================================"
 echo "Fixing Grafana Dashboards"
 echo "========================================"
 
-# Get Grafana password from Kubernetes environment (manually verified as admin123)
+# Get Grafana password from Kubernetes secret
 echo "→ Fetching Grafana password..."
-GRAFANA_PASSWORD="admin123"
+GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-secret -n monitoring \
+    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
 
-# Prometheus Credentials (from Secrets Manager verified earlier)
-PROM_USER="prometheus-admin"
-PROM_PASS="KvV&!FbJBge3QSVnsnffFT2Y6D8?A<&k"
+# Prometheus Credentials — from Secrets Manager (never hardcode)
+echo "→ Fetching Prometheus credentials from Secrets Manager..."
+PROM_CREDS=$(aws secretsmanager get-secret-value \
+    --secret-id "node-fleet/prometheus-auth" \
+    --query SecretString --output text 2>/dev/null || echo "")
+if [ -n "$PROM_CREDS" ]; then
+    PROM_USER=$(echo "$PROM_CREDS" | jq -r '.username')
+    PROM_PASS=$(echo "$PROM_CREDS" | jq -r '.password')
+else
+    echo "❌ ERROR: Could not fetch Prometheus credentials from Secrets Manager (node-fleet/prometheus-auth)"
+    echo "   Ensure the Lambda role's IAM permissions include secretsmanager:GetSecretValue"
+    exit 1
+fi
 
 echo "→ Grafana URL: ${GRAFANA_URL}"
 echo "→ Username: ${GRAFANA_USER}"
@@ -110,7 +126,9 @@ echo "   CloudWatch UID: ${CW_UID}"
 echo "   Prometheus UID: ${PROM_UID}"
 
 # Step 4: Import dashboards
-DASHBOARD_DIR="./monitoring/grafana-dashboards"
+# Dashboard dir relative to this script's location (works from any directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DASHBOARD_DIR="${SCRIPT_DIR}/grafana-dashboards"
 echo ""
 echo "→ Importing dashboards..."
 
@@ -119,18 +137,15 @@ import_dashboard() {
     local title=$(jq -r '.title' "$file")
     echo "   • ${title}..."
     
-    # Intelligently map data sources:
-    # 1. Targets with 'expr' get Prometheus
-    # 2. Targets with 'namespace' (CloudWatch style) or specifically 'cloudwatch' get CloudWatch
+    # Map datasources: targets with 'expr' → Prometheus, others → CloudWatch
+    # Use valid jq path expression so |= correctly updates each target in-place
     local updated_json=$(jq --arg cw_uid "$CW_UID" --arg prom_uid "$PROM_UID" '
-        (.panels[]? | select(.targets != null)) |= (
-            .targets[]? |= (
-                if .expr != null then
-                    .datasource = {"type": "prometheus", "uid": $prom_uid}
-                else
-                    .datasource = {"type": "cloudwatch", "uid": $cw_uid}
-                end
-            )
+        (.panels[].targets[]?) |= (
+            if .expr != null then
+                . + {"datasource": {"type": "prometheus", "uid": $prom_uid}}
+            else
+                . + {"datasource": {"type": "cloudwatch", "uid": $cw_uid}}
+            end
         )
     ' "$file")
     
@@ -170,6 +185,6 @@ echo "   • Cost Tracking"
 echo ""
 echo "Note: If dashboards still show 'No data':"
 echo "  - Wait 5 minutes for Lambda to publish more metrics"
-echo "  - Check Lambda logs: aws logs tail /aws/lambda/node-fleet-dev-autoscaler"
+echo "  - Check Lambda logs: aws logs tail /aws/lambda/node-fleet-autoscaler"
 echo "  - Verify CloudWatch metrics: aws cloudwatch list-metrics --namespace NodeFleet/Autoscaler"
 echo ""

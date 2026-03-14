@@ -11,11 +11,16 @@ def select_subnet_for_new_instance(existing_instances: List[Dict], available_sub
     
     Args:
         existing_instances: List of current running instances with subnet info
-        available_subnets: List of subnet IDs (ap-south-1a, ap-south-1b)
+        available_subnets: List of subnet IDs (ap-southeast-1a, ap-southeast-1b)
     
     Returns:
         Subnet ID to use for new instance
+    
+    Raises:
+        ValueError: If available_subnets is empty
     """
+    if not available_subnets:
+        raise ValueError("No subnets available for instance placement")
     # Count instances per subnet
     subnet_counts = {}
     for subnet_id in available_subnets:

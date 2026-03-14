@@ -69,7 +69,7 @@ class StateManager:
                     else:
                         logger.warning(f"Lock already held for cluster {self.cluster_id} (age: {lock_age}s)")
                         return False
-                except:
+                except Exception:
                     logger.warning(f"Lock already held for cluster {self.cluster_id}")
                     return False
             else:

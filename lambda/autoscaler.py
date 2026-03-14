@@ -448,7 +448,7 @@ def publish_cloudwatch_metrics(action: str, metrics: Dict, new_node_count: int, 
         for i in range(0, len(metric_data), 20):
             batch = metric_data[i:i+20]
             cloudwatch.put_metric_data(
-                Namespace='node-fleet',
+                Namespace='NodeFleet/Autoscaler',
                 MetricData=batch
             )
         

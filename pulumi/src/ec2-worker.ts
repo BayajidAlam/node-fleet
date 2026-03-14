@@ -42,16 +42,8 @@ export const workerLaunchTemplate = new aws.ec2.LaunchTemplate(
         ebs: {
           volumeSize: 20,
           volumeType: "gp3",
-          encrypted: "true",
-          deleteOnTermination: "true",
-        },
-      },
-    ],
-    tagSpecifications: [
-      {
-        resourceType: "instance",
-        tags: {
-          Name: `${clusterName}-worker`,
+          encrypted: true,
+          deleteOnTermination: true,
           Role: "k3s-worker",
           Project: "node-fleet",
           ManagedBy: "autoscaler",
@@ -89,8 +81,8 @@ export const workerSpotTemplate = new aws.ec2.LaunchTemplate(
         ebs: {
           volumeSize: 20,
           volumeType: "gp3",
-          encrypted: "true",
-          deleteOnTermination: "true",
+          encrypted: true,
+          deleteOnTermination: true,
         },
       },
     ],

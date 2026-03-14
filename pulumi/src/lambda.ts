@@ -27,7 +27,7 @@ export const autoscalerDlq = new aws.sqs.Queue("autoscaler-dlq", {
 // Lambda function for autoscaler
 export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   name: `${clusterName}-autoscaler`,
-  runtime: aws.lambda.Runtime.Python3d11,
+  runtime: aws.lambda.Runtime.Python3_11,
   handler: "autoscaler.lambda_handler",
   role: lambdaRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,

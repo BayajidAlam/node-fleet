@@ -6,7 +6,7 @@ Supports queue depth, API latency, request rate, and custom business metrics usi
 import logging
 import requests
 import base64
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -69,7 +69,7 @@ class CustomMetricsCollector:
         val = self._query(f'app_active_connections{{service="{service}"}}')
         return int(val) if val is not None else None
     
-    def evaluate_scaling_need(self, thresholds: Dict[str, any]) -> Dict[str, any]:
+    def evaluate_scaling_need(self, thresholds: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate if scaling is needed based on custom metrics"""
         reasons = []
         scale_up = False

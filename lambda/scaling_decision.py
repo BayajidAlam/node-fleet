@@ -65,10 +65,11 @@ class ScalingDecision:
         if self.current_nodes >= self.max_nodes:
             logger.info(f"At or above max capacity ({self.current_nodes}/{self.max_nodes}). Skipping scale-up check.")
             # Still evaluate scale-down below
-        else:
-            # 1. Evaluate SCALE UP conditions (3-minute sustained load)
-            scale_up_reasons = []
-        
+
+        # 1. Evaluate SCALE UP conditions (3-minute sustained load)
+        # Initialise here so it's always defined (guarded by capacity check in return block below)
+        scale_up_reasons = []
+
         # Check if CPU/Mem/Pending exceeds threshold for at least 2 consecutive readings (covering ~3-4 mins)
         sustained_cpu = self._is_sustained_above(cpu, history, 'cpu_usage', CPU_SCALE_UP_THRESHOLD, window=3)
         sustained_memory = self._is_sustained_above(memory, history, 'memory_usage', MEMORY_SCALE_UP_THRESHOLD, window=3)

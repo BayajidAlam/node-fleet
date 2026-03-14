@@ -34,7 +34,7 @@ class EC2Manager:
         self.worker_spot_template_id = worker_spot_template_id
         self.spot_percentage = spot_percentage
         self.ec2_client = boto3.client('ec2')
-        # Multi-AZ: Subnet IDs for ap-south-1a and ap-south-1b
+        # Multi-AZ: Subnet IDs for ap-southeast-1a and ap-southeast-1b
         self.available_subnets = self._get_cluster_subnets()
     
     def handle_spot_interruption_event(self, instance_id: str) -> Dict:
@@ -411,11 +411,14 @@ class EC2Manager:
             # Optimized: We'll skip the single-replica deep check via SSH for now or do a second call?
             # Let's do a second call for ReplicaSets to be thorough
             
-            client.connect(hostname=self._get_master_ip(), username="ubuntu", pkey=private_key, timeout=10)
+            # Second SSH call for ReplicaSets - create a fresh client
+            rs_client = paramiko.SSHClient()
+            rs_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            rs_client.connect(hostname=self._get_master_ip(), username="ubuntu", pkey=private_key, timeout=10)
             rs_cmd = "sudo k3s kubectl get replicasets -A -o json"
-            stdin, stdout, stderr = client.exec_command(rs_cmd)
+            stdin, stdout, stderr = rs_client.exec_command(rs_cmd)
             rs_out = stdout.read().decode().strip()
-            client.close()
+            rs_client.close()
             
             rs_map = {} # namespace/name -> replicas
             try:
@@ -423,8 +426,8 @@ class EC2Manager:
                 for rs in rs_list.get('items', []):
                     key = f"{rs['metadata']['namespace']}/{rs['metadata']['name']}"
                     rs_map[key] = rs.get('spec', {}).get('replicas', 1)
-            except:
-                logger.warning("Failed to parse ReplicaSets via SSH, assuming safe defaults")
+            except Exception as e:
+                logger.warning(f"Failed to parse ReplicaSets via SSH: {e}. Assuming safe defaults.")
             
             for pod in pod_list.get('items', []):
                 status = pod.get('status', {})
