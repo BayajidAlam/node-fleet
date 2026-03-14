@@ -192,8 +192,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 try:
                     custom_metrics_eval = get_custom_metrics(
                         PROMETHEUS_URL, 
-                        PROMETHEUS_USERNAME, 
-                        PROMETHEUS_PASSWORD
+                        prom_user, 
+                        prom_pass
                     )
                     logger.info(f"Custom metrics: {custom_metrics_eval}")
                 except Exception as e:

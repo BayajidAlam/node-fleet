@@ -65,7 +65,7 @@ class EC2Manager:
             
         # 3. Drain Node
         logger.info(f"Draining node {node_name} due to spot interruption")
-        drain_result = self._drain_node(node_name, timeout=120) # 2 min max
+        drain_result = self._drain_node(node_name, timeout=300) # 5 min max (consistent with scale-down)
         
         if drain_result:
             logger.info(f"Successfully drained {node_name}. Termination will happen by AWS.")
@@ -386,7 +386,7 @@ class EC2Manager:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            master_ip = "10.0.1.147"
+            master_ip = self._get_master_ip()
             client.connect(hostname=master_ip, username="ubuntu", pkey=private_key, timeout=10)
             
             stdin, stdout, stderr = client.exec_command(cmd)
@@ -579,6 +579,25 @@ class EC2Manager:
             logger.error(f"Failed to get SSH key: {e}")
             return None
 
+    def _get_master_ip(self) -> str:
+        """Dynamically resolve master node private IP via EC2 tags"""
+        try:
+            response = self.ec2_client.describe_instances(
+                Filters=[
+                    {'Name': 'tag:Role', 'Values': ['k3s-master']},
+                    {'Name': 'instance-state-name', 'Values': ['running']}
+                ]
+            )
+            reservations = response.get('Reservations', [])
+            if not reservations or not reservations[0].get('Instances'):
+                raise ValueError("No running k3s-master instance found")
+            ip = reservations[0]['Instances'][0]['PrivateIpAddress']
+            logger.info(f"Resolved master IP: {ip}")
+            return ip
+        except Exception as e:
+            logger.error(f"Failed to resolve master IP dynamically: {e}")
+            raise
+
     def _execute_master_command(self, command: str) -> bool:
         """Execute command on master node via SSH"""
         import paramiko
@@ -595,8 +614,8 @@ class EC2Manager:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            # Connect to Master Private IP
-            master_ip = "10.0.1.147"
+            # Connect to Master Private IP (resolved dynamically via EC2 tags)
+            master_ip = self._get_master_ip()
             logger.info(f"SSH Connecting to master {master_ip}...")
             client.connect(hostname=master_ip, username="ubuntu", pkey=private_key, timeout=10)
             
@@ -621,10 +640,45 @@ class EC2Manager:
             return False
 
     def _drain_node(self, node_name: str, timeout: int = 300) -> bool:
-        """Drain node using SSH to master (more reliable than remote API)"""
-        logger.info(f"Draining node {node_name} via SSH...")
+        """Drain node using SSH to master. Validates drain completion via exit code and output."""
+        import paramiko
+        import io
+
+        logger.info(f"Draining node {node_name} via SSH (timeout={timeout}s)...")
         cmd = f"sudo k3s kubectl drain {node_name} --ignore-daemonsets --delete-emptydir-data --force --timeout={timeout}s"
-        return self._execute_master_command(cmd)
+
+        try:
+            private_key_str = self._get_ssh_key()
+            if not private_key_str:
+                logger.error("No SSH key available for drain")
+                return False
+
+            private_key = paramiko.RSAKey.from_private_key(io.StringIO(private_key_str))
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(hostname=self._get_master_ip(), username="ubuntu", pkey=private_key, timeout=10)
+
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            exit_status = stdout.channel.recv_exit_status()
+            out_str = stdout.read().decode().strip()
+            err_str = stderr.read().decode().strip()
+            ssh.close()
+
+            if exit_status != 0:
+                logger.error(f"Drain failed (exit {exit_status}): {err_str or out_str}")
+                return False
+
+            # Verify drain actually completed — kubectl prints "node/<name> drained" on success
+            if f"node/{node_name} drained" not in out_str and "drained" not in out_str:
+                logger.warning(f"Drain exit 0 but 'drained' not in output. Output: {out_str}")
+                return False
+
+            logger.info(f"Node {node_name} drained successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Drain SSH error for {node_name}: {e}")
+            return False
 
     def _load_kube_config(self) -> bool:
         """

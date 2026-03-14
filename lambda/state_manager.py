@@ -33,14 +33,14 @@ class StateManager:
         """
         try:
             current_time = int(time.time())
-            lock_expiry_time = current_time + 120  # Lock expires after 2 minutes
+            lock_expiry_time = current_time + 360  # Lock expires after 6 minutes (covers worst-case drain + join)
             expired_time = current_time  # Locks older than now are considered expired
             
             # Try to acquire lock with conditional expression
             # Lock can be acquired if:
             # 1. No lock exists (attribute_not_exists)
             # 2. Lock is released (scaling_in_progress = false)
-            # 3. Lock has expired (lock_acquired_at < current_time - 300 seconds)
+            # 3. Lock has expired (lock_acquired_at < current_time - 360 seconds)
             self.table.update_item(
                 Key={'cluster_id': self.cluster_id},
                 UpdateExpression='SET scaling_in_progress = :true, lock_acquired_at = :now, lock_expiry = :expiry',
@@ -50,7 +50,7 @@ class StateManager:
                     ':false': False,
                     ':now': current_time,
                     ':expiry': lock_expiry_time,
-                    ':expired': current_time - 120  # Locks older than 2 minutes
+                    ':expired': current_time - 360  # Locks older than 6 minutes are stale
                 }
             )
             logger.info(f"Lock acquired for cluster {self.cluster_id} (expires at {lock_expiry_time})")
@@ -62,7 +62,7 @@ class StateManager:
                 try:
                     state = self.get_state()
                     lock_age = current_time - state.get('lock_acquired_at', current_time)
-                    if lock_age > 120:
+                    if lock_age > 360:
                         logger.warning(f"Stale lock detected (age: {lock_age}s), forcing release")
                         self.release_lock()
                         return self.acquire_lock(timeout)  # Retry once

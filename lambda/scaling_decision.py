@@ -116,7 +116,7 @@ class ScalingDecision:
                 'memory_usage': MEMORY_SCALE_DOWN_THRESHOLD,
                 'pending_pods': 1 # Must be < 1
             },
-            window=10
+            window=5
         )
         
         if sustained_low_util:

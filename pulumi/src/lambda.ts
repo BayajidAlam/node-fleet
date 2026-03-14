@@ -55,13 +55,13 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   },
 });
 
-// EventBridge rule to trigger Lambda every 1 minute
+// EventBridge rule to trigger Lambda every 2 minutes (per spec)
 export const autoscalerSchedule = new aws.cloudwatch.EventRule(
   "autoscaler-schedule",
   {
     name: `${clusterName}-autoscaler-schedule`,
-    description: "Trigger K3s autoscaler every 1 minute (updated for precise timing)",
-    scheduleExpression: "rate(1 minute)",
+    description: "Trigger K3s autoscaler every 2 minutes",
+    scheduleExpression: "rate(2 minutes)",
     tags: {
       Project: "node-fleet",
       LastUpdated: "2026-01-28T01:00:00",
