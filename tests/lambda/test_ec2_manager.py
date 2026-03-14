@@ -31,8 +31,8 @@ def mock_ec2():
         # Mock subnet discovery (needed for scale-up logic)
         mock_client.describe_subnets.return_value = {
             'Subnets': [
-                {'SubnetId': 'subnet-az1', 'AvailabilityZone': 'ap-south-1a'},
-                {'SubnetId': 'subnet-az2', 'AvailabilityZone': 'ap-south-1b'}
+                {'SubnetId': 'subnet-az1', 'AvailabilityZone': 'ap-southeast-1a'},
+                {'SubnetId': 'subnet-az2', 'AvailabilityZone': 'ap-southeast-1b'}
             ]
         }
         yield mock_client

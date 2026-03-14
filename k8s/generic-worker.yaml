@@ -14,11 +14,10 @@ spec:
         app: generic-worker
     spec:
       containers:
-      - name: worker
-        image: alpine:latest
-        command: ["/bin/sh", "-c", "sleep 3600"]
-        resources:
-          requests:
-            cpu: "500m"
-            memory: "256Mi"
-
+        - name: worker
+          image: alpine:3.19
+          command: ["/bin/sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"

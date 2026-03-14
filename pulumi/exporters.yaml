@@ -9,21 +9,35 @@ kind: ClusterRole
 metadata:
   name: kube-state-metrics
 rules:
-- apiGroups: [""]
-  resources: ["configmaps", "secrets", "nodes", "pods", "services", "resourcequotas", "replicationcontrollers", "limitranges", "persistentvolumeclaims", "persistentvolumes", "namespaces", "endpoints"]
-  verbs: ["list", "watch"]
-- apiGroups: ["apps"]
-  resources: ["statefulsets", "daemonsets", "deployments", "replicasets"]
-  verbs: ["list", "watch"]
-- apiGroups: ["batch"]
-  resources: ["cronjobs", "jobs"]
-  verbs: ["list", "watch"]
-- apiGroups: ["autoscaling"]
-  resources: ["horizontalpodautoscalers"]
-  verbs: ["list", "watch"]
-- apiGroups: ["policy"]
-  resources: ["poddisruptionbudgets"]
-  verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources:
+      [
+        "configmaps",
+        "secrets",
+        "nodes",
+        "pods",
+        "services",
+        "resourcequotas",
+        "replicationcontrollers",
+        "limitranges",
+        "persistentvolumeclaims",
+        "persistentvolumes",
+        "namespaces",
+        "endpoints",
+      ]
+    verbs: ["list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "daemonsets", "deployments", "replicasets"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -34,9 +48,9 @@ roleRef:
   kind: ClusterRole
   name: kube-state-metrics
 subjects:
-- kind: ServiceAccount
-  name: kube-state-metrics
-  namespace: monitoring
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: monitoring
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -55,13 +69,13 @@ spec:
     spec:
       serviceAccountName: kube-state-metrics
       containers:
-      - name: kube-state-metrics
-        image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.9.2
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 8081
-          name: telemetry
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.9.2
+          ports:
+            - containerPort: 8080
+              name: http-metrics
+            - containerPort: 8081
+              name: telemetry
 ---
 apiVersion: v1
 kind: Service
@@ -72,12 +86,12 @@ metadata:
     app: kube-state-metrics
 spec:
   ports:
-  - name: http-metrics
-    port: 8080
-    targetPort: http-metrics
-  - name: telemetry
-    port: 8081
-    targetPort: telemetry
+    - name: http-metrics
+      port: 8080
+      targetPort: http-metrics
+    - name: telemetry
+      port: 8081
+      targetPort: telemetry
   selector:
     app: kube-state-metrics
 ---
@@ -98,30 +112,30 @@ spec:
         app: node-exporter
     spec:
       containers:
-      - name: node-exporter
-        image: quay.io/prometheus/node-exporter:latest
-        args:
-        - "--path.procfs=/host/proc"
-        - "--path.sysfs=/host/sys"
-        ports:
-        - containerPort: 9100
-          hostPort: 9100
-          name: metrics
-        volumeMounts:
-        - name: proc
-          mountPath: /host/proc
-          readOnly: true
-        - name: sys
-          mountPath: /host/sys
-          readOnly: true
+        - name: node-exporter
+          image: quay.io/prometheus/node-exporter:v1.7.0
+          args:
+            - "--path.procfs=/host/proc"
+            - "--path.sysfs=/host/sys"
+          ports:
+            - containerPort: 9100
+              hostPort: 9100
+              name: metrics
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
       hostNetwork: true
       volumes:
-      - name: proc
-        hostPath:
-          path: /proc
-      - name: sys
-        hostPath:
-          path: /sys
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
 ---
 apiVersion: v1
 kind: Service
@@ -132,8 +146,8 @@ metadata:
     app: node-exporter
 spec:
   ports:
-  - name: metrics
-    port: 9100
-    targetPort: metrics
+    - name: metrics
+      port: 9100
+      targetPort: metrics
   selector:
     app: node-exporter

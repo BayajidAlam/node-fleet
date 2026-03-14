@@ -14,8 +14,8 @@ spec:
     spec:
       hostNetwork: true
       containers:
-      - name: node-exporter
-        image: prom/node-exporter:latest
-        ports:
-        - containerPort: 9100
-          hostPort: 9100
+        - name: node-exporter
+          image: prom/node-exporter:v1.7.0
+          ports:
+            - containerPort: 9100
+              hostPort: 9100

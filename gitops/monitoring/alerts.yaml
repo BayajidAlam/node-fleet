@@ -12,9 +12,7 @@ data:
     groups:
     - name: node-fleet-metrics
       interval: 30s
-      rules: []
-
-      
+      rules:
       - alert: MaxNodesReached
         expr: count(kube_node_info) >= 10
         labels:

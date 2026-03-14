@@ -37,8 +37,8 @@ export const masterSg = new aws.ec2.SecurityGroup("master-sg", {
     // Grafana NodePort
     {
       protocol: "tcp",
-      fromPort: 30030,
-      toPort: 30030,
+      fromPort: 30300,
+      toPort: 30300,
       cidrBlocks: ["0.0.0.0/0"],
       description: "Grafana",
     },

@@ -32,8 +32,8 @@ def mock_ec2_multi_az():
         # Mock subnet discovery (Multi-AZ)
         mock_client.describe_subnets.return_value = {
             'Subnets': [
-                {'SubnetId': 'subnet-az1', 'AvailabilityZone': 'ap-south-1a'},
-                {'SubnetId': 'subnet-az2', 'AvailabilityZone': 'ap-south-1b'}
+                {'SubnetId': 'subnet-az1', 'AvailabilityZone': 'ap-southeast-1a'},
+                {'SubnetId': 'subnet-az2', 'AvailabilityZone': 'ap-southeast-1b'}
             ]
         }
         

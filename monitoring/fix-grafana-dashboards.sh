@@ -7,10 +7,10 @@ set -e
 MASTER_IP="${1}"
 if [ -z "$MASTER_IP" ]; then
     echo "❌ ERROR: MASTER_IP required. Usage: $0 <master-ip>"
-    echo "   Get it with: pulumi -C pulumi stack output masterIp"
+    echo "   Get it with: pulumi -C pulumi stack output masterPublicIpAddress"
     exit 1
 fi
-GRAFANA_PORT="30030"
+GRAFANA_PORT="30300"
 GRAFANA_URL="http://${MASTER_IP}:${GRAFANA_PORT}"
 GRAFANA_USER="admin"
 
@@ -43,7 +43,7 @@ echo "→ Username: ${GRAFANA_USER}"
 # Check Grafana is accessible
 if ! curl -s -o /dev/null -w "%{http_code}" "${GRAFANA_URL}/api/health" | grep -q "200"; then
     echo "❌ ERROR: Grafana is not accessible at ${GRAFANA_URL}"
-    echo "   Make sure you're running this from the master node or can access NodePort 30030"
+    echo "   Make sure you're running this from the master node or can access NodePort 30300"
     exit 1
 fi
 

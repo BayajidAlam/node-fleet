@@ -1,11 +1,12 @@
 """
 Main Lambda handler for K3s autoscaler
-Orchestrates the 5-step scaling workflow with predictive scaling:
-1. Query Prometheus metrics
-2. Acquire DynamoDB lock
-3. Decide scaling action (reactive + predictive)
-4. Execute EC2 scaling
-5. Send Slack notification
+Orchestrates the 6-step scaling workflow with predictive scaling:
+1. Check DynamoDB lock — exit if scaling already in progress
+2. Query Prometheus metrics (CPU, memory, pending pods)
+3. Evaluate scaling conditions with history (reactive + predictive)
+4. Execute EC2 scaling (scale_up / scale_down)
+5. Publish CloudWatch metrics and send Slack notification
+6. Release DynamoDB lock in finally block (always)
 """
 
 import os

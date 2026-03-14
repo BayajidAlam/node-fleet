@@ -312,6 +312,6 @@ sudo k3s kubectl get pods -n monitoring
 echo ""
 echo "Access points:"
 echo "  Prometheus: http://\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):30090"
-echo "  Grafana:    http://\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000"
+echo "  Grafana:    http://\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):30300"
 echo "  Username: admin, Password: (see Secrets Manager: node-fleet/grafana-admin-password)"
 echo ""
