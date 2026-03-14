@@ -84,10 +84,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     logger.info(f"Autoscaler triggered for cluster: {CLUSTER_ID}")
 
-    # Step 0: Complete any pending async drain operations from previous invocations
-    # (drain runs asynchronously via SSM; termination happens here once SSM confirms completion)
+    # Step 0: Complete any pending async operations from previous invocations
+    # (drain via SSM + node-Ready verification — both non-blocking across invocations)
     try:
-        logger.info("Step 0: Checking pending drain operations")
+        logger.info("Step 0: Checking pending async operations (drains + scale-up readiness)")
         _state_manager_early = StateManager(STATE_TABLE, CLUSTER_ID)
         _ec2_manager_early = EC2Manager(
             worker_template_id=WORKER_LAUNCH_TEMPLATE_ID,
@@ -100,8 +100,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             send_notification(
                 f"🔵 Scale-down complete: Terminated {len(terminated)} node(s) {terminated} after successful drain"
             )
+        confirmed_ready = _ec2_manager_early.check_pending_scale_ups(_state_manager_early)
+        if confirmed_ready:
+            logger.info(f"{len(confirmed_ready)} node(s) confirmed Ready: {confirmed_ready}")
+            send_notification(f"🟢 Scale-up complete: {len(confirmed_ready)} node(s) joined and are Ready")
     except Exception as e:
-        logger.warning(f"Failed to check pending drains (non-fatal): {e}")
+        logger.warning(f"Failed to check pending async operations (non-fatal): {e}")
 
     # Handle Spot Instance Interruption
     if event.get("detail-type") == "EC2 Spot Instance Interruption Warning":
@@ -290,7 +294,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if action["action"] == "scale_up":
                 result = ec2_manager.scale_up(
                     nodes_to_add=action["nodes"],
-                    reason=action["reason"]
+                    reason=action["reason"],
+                    state_manager=state_manager
                 )
             else:  # scale_down
                 result = ec2_manager.scale_down(

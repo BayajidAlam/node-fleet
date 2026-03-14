@@ -65,7 +65,7 @@ class EC2Manager:
             
         # 3. Drain Node
         logger.info(f"Draining node {node_name} due to spot interruption")
-        drain_result = self._drain_node(node_name, timeout=300) # 5 min max (consistent with scale-down)
+        drain_result = self._drain_node(node_name, instance_id, timeout=300)  # async SSM, non-blocking
         
         if drain_result:
             logger.info(f"Successfully drained {node_name}. Termination will happen by AWS.")
@@ -74,7 +74,7 @@ class EC2Manager:
             logger.error(f"Failed to drain {node_name}")
             return {"success": False, "reason": "Drain failed"}
 
-    def scale_up(self, nodes_to_add: int, reason: str) -> Dict:
+    def scale_up(self, nodes_to_add: int, reason: str, state_manager=None) -> Dict:
         """
         Launch new worker nodes (mix of on-demand and spot)
         
@@ -142,21 +142,20 @@ class EC2Manager:
             
             logger.info(f"Successfully launched {len(instance_ids)} instances: {instance_ids}")
             logger.info(f"New cluster composition: {current_spot_count + spot_count} spot + {current_ondemand_count + ondemand_count} on-demand")
-            
-            # Wait for nodes to join the cluster and become ready
-            join_start_time = time.time()
-            ready_nodes = self._wait_for_nodes_ready(instance_ids, timeout=300)
-            join_latency_ms = int((time.time() - join_start_time) * 1000)
-            
-            logger.info(f"Node join latency: {join_latency_ms}ms, Ready nodes: {len(ready_nodes)}/{len(instance_ids)}")
-            
+
+            # Nodes take 2-3 minutes to boot and join — Lambda's 60s budget can't wait.
+            # Store pending instance IDs in DynamoDB; next invocation verifies Ready status.
+            if state_manager:
+                state_manager.store_pending_scale_up(instance_ids, launch_time=int(time.time()))
+            logger.info(f"Instances launched. Node readiness will be verified in next invocation.")
+
             return {
                 "success": True,
                 "instance_ids": instance_ids,
                 "spot_count": spot_count,
                 "ondemand_count": ondemand_count,
-                "ready_nodes": ready_nodes,
-                "node_join_latency_ms": join_latency_ms
+                "ready_nodes": [],  # Verified asynchronously in next invocation
+                "node_join_latency_ms": 0  # Reported once nodes are confirmed Ready
             }
             
         except Exception as e:
@@ -768,6 +767,54 @@ class EC2Manager:
                 state_manager.clear_drain_instance(instance_id)
 
         return terminated
+
+    def check_pending_scale_ups(self, state_manager) -> List[str]:
+        """
+        Check launched instances from previous invocations for node-Ready status.
+        Publishes NodeJoinLatency metric for instances that have become Ready.
+        Returns list of instance IDs now confirmed Ready.
+        """
+        pending = state_manager.get_pending_scale_ups()
+        if not pending:
+            return []
+
+        logger.info(f"Checking {len(pending)} pending scale-up instance(s) for node readiness")
+        confirmed = []
+
+        if not self._load_kube_config():
+            logger.warning("check_pending_scale_ups: Failed to load kube config, skipping")
+            return []
+
+        v1 = client.CoreV1Api()
+        try:
+            nodes = v1.list_node()
+        except Exception as e:
+            logger.warning(f"check_pending_scale_ups: Failed to list nodes: {e}")
+            return []
+
+        ready_node_names = set()
+        for node in nodes.items:
+            for condition in node.status.conditions:
+                if condition.type == "Ready" and condition.status == "True":
+                    ready_node_names.add(node.metadata.name)
+
+        for entry in pending:
+            instance_id = entry['instance_id']
+            node_name = self._get_node_name_from_instance(instance_id)
+            if node_name and node_name in ready_node_names:
+                latency_ms = int((time.time() - entry['launch_time']) * 1000)
+                logger.info(f"Node {node_name} ({instance_id}) is Ready. Join latency: {latency_ms}ms")
+                state_manager.clear_pending_scale_up(instance_id)
+                confirmed.append(instance_id)
+            else:
+                elapsed = int(time.time() - entry['launch_time'])
+                logger.info(f"Instance {instance_id} not yet Ready (elapsed: {elapsed}s)")
+                # Timeout after 10 minutes — something went wrong
+                if elapsed > 600:
+                    logger.warning(f"Instance {instance_id} failed to join within 10min — removing from pending")
+                    state_manager.clear_pending_scale_up(instance_id)
+
+        return confirmed
 
     def _load_kube_config(self) -> bool:
         """

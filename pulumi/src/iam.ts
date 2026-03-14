@@ -229,11 +229,4 @@ export const lambdaVpcPolicy = new aws.iam.RolePolicyAttachment(
   },
 );
 
-// Attach SSM managed policy to Master Role
-export const masterSsmPolicy = new aws.iam.RolePolicyAttachment(
-  "master-ssm-policy",
-  {
-    role: masterRole.name,
-    policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-  },
-);
+// masterSsmPolicy is already declared above (line ~48) — no duplicate needed

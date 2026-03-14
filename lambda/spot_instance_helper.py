@@ -121,8 +121,8 @@ def handle_spot_interruption(instance_id: str, cluster_id: str) -> bool:
             ]
         )
         
-        # Note: Actual pod draining happens in k3s_helper.py drain_node()
-        # This function just tags and triggers replacement
+        # Note: Actual pod draining happens in ec2_manager.py EC2Manager._drain_node()
+        # This function just tags the instance for tracking
         
         logger.info(f"Spot instance {instance_id} marked for draining and replacement")
         return True

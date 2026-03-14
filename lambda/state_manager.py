@@ -245,3 +245,41 @@ class StateManager:
             logger.info(f"Cleared drain state for {instance_id}")
         except ClientError as e:
             logger.error(f"Error clearing drain state for {instance_id}: {str(e)}")
+
+    def store_pending_scale_up(self, instance_ids: list, launch_time: int):
+        """Store newly launched instance IDs pending node-Ready verification."""
+        try:
+            from decimal import Decimal
+            items = [{'instance_id': iid, 'launch_time': Decimal(str(launch_time))} for iid in instance_ids]
+            self.table.update_item(
+                Key={'cluster_id': self.cluster_id},
+                UpdateExpression='SET pending_scale_up = :items',
+                ExpressionAttributeValues={':items': items}
+            )
+            logger.info(f"Stored {len(items)} pending scale-up instance(s)")
+        except ClientError as e:
+            logger.error(f"Error storing pending scale-up: {str(e)}")
+
+    def get_pending_scale_ups(self) -> list:
+        """Return list of launched instances not yet verified as Ready."""
+        try:
+            state = self.get_state()
+            raw = state.get('pending_scale_up', [])
+            return [{'instance_id': str(d['instance_id']), 'launch_time': int(d.get('launch_time', 0))} for d in raw]
+        except Exception as e:
+            logger.error(f"Error reading pending scale-ups: {e}")
+            return []
+
+    def clear_pending_scale_up(self, instance_id: str):
+        """Remove an instance from the pending scale-up list once it's confirmed Ready."""
+        try:
+            pending = self.get_pending_scale_ups()
+            updated = [d for d in pending if d['instance_id'] != instance_id]
+            self.table.update_item(
+                Key={'cluster_id': self.cluster_id},
+                UpdateExpression='SET pending_scale_up = :items',
+                ExpressionAttributeValues={':items': updated}
+            )
+            logger.info(f"Cleared pending scale-up for {instance_id}")
+        except ClientError as e:
+            logger.error(f"Error clearing pending scale-up for {instance_id}: {str(e)}")
