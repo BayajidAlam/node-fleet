@@ -411,7 +411,7 @@ class EC2Manager:
             # Optimized: We'll skip the single-replica deep check via SSH for now or do a second call?
             # Let's do a second call for ReplicaSets to be thorough
             
-            client.connect(hostname=master_ip, username="ubuntu", pkey=private_key, timeout=10)
+            client.connect(hostname=self._get_master_ip(), username="ubuntu", pkey=private_key, timeout=10)
             rs_cmd = "sudo k3s kubectl get replicasets -A -o json"
             stdin, stdout, stderr = client.exec_command(rs_cmd)
             rs_out = stdout.read().decode().strip()

@@ -14,6 +14,16 @@ const clusterName = config.require("clusterName");
 const minNodes = config.getNumber("minNodes") || 2;
 const maxNodes = config.getNumber("maxNodes") || 10;
 
+// Dead Letter Queue — captures permanently failed Lambda invocations for debugging
+export const autoscalerDlq = new aws.sqs.Queue("autoscaler-dlq", {
+  name: `${clusterName}-autoscaler-dlq`,
+  messageRetentionSeconds: 1209600, // 14 days
+  tags: {
+    Name: `${clusterName}-autoscaler-dlq`,
+    Project: "node-fleet",
+  },
+});
+
 // Lambda function for autoscaler
 export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   name: `${clusterName}-autoscaler`,
@@ -25,6 +35,10 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   s3ObjectVersion: lambdaPackage.versionId,
   timeout: 60, // 60 seconds (per spec)
   memorySize: 256, // 256 MB (per spec)
+
+  deadLetterConfig: {
+    targetArn: autoscalerDlq.arn,
+  },
 
   vpcConfig: {
     subnetIds: [privateSubnet1.id, privateSubnet2.id],
@@ -219,3 +233,4 @@ new aws.lambda.Permission("scheduler-permission", {
 
 export const autoscalerLambdaArn = autoscalerLambda.arn;
 export const autoscalerScheduleName = autoscalerSchedule.name;
+export const autoscalerDlqUrl = autoscalerDlq.url;

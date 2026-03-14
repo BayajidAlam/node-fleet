@@ -72,7 +72,7 @@ class ScalingDecision:
         # Check if CPU/Mem/Pending exceeds threshold for at least 2 consecutive readings (covering ~3-4 mins)
         sustained_cpu = self._is_sustained_above(cpu, history, 'cpu_usage', CPU_SCALE_UP_THRESHOLD, window=3)
         sustained_memory = self._is_sustained_above(memory, history, 'memory_usage', MEMORY_SCALE_UP_THRESHOLD, window=3)
-        sustained_pending = self._is_sustained_above(pending_pods, history, 'pending_pods', 0, window=3)
+        sustained_pending = self._is_sustained_above(pending_pods, history, 'pending_pods', 0, window=2)
 
         if sustained_cpu:
             scale_up_reasons.append(f"CPU sustained > {CPU_SCALE_UP_THRESHOLD}%")

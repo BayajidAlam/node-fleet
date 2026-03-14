@@ -43,25 +43,32 @@ ENABLE_PREDICTIVE_SCALING = os.environ.get("ENABLE_PREDICTIVE_SCALING", "true").
 ENABLE_CUSTOM_METRICS = os.environ.get("ENABLE_CUSTOM_METRICS", "false").lower() == "true"
 
 def get_prometheus_credentials():
-    """Get Prometheus credentials from Secrets Manager or Env Vars"""
-    username = os.environ.get("PROMETHEUS_USERNAME", "admin")
-    password = os.environ.get("PROMETHEUS_PASSWORD", "prompassword")
-    
-    # If using defaults, try fetching from Secrets Manager
-    if password == "prompassword":
-        try:
-            import json
-            client = boto3.client('secretsmanager')
-            secret_name = "node-fleet/prometheus-auth"
-            response = client.get_secret_value(SecretId=secret_name)
-            if 'SecretString' in response:
-                creds = json.loads(response['SecretString'])
-                username = creds.get('username', username)
-                password = creds.get('password', password)
+    """Get Prometheus credentials — Secrets Manager first, then env vars. Never fall back to hardcoded values."""
+    # Try Secrets Manager first (preferred)
+    try:
+        import json
+        sm = boto3.client('secretsmanager')
+        response = sm.get_secret_value(SecretId="node-fleet/prometheus-auth")
+        if 'SecretString' in response:
+            creds = json.loads(response['SecretString'])
+            username = creds.get('username')
+            password = creds.get('password')
+            if username and password:
                 logger.info("Loaded Prometheus credentials from Secrets Manager")
-        except Exception as e:
-            logger.warning(f"Failed to load Prometheus secrets: {e}")
-            
+                return username, password
+    except Exception as e:
+        logger.warning(f"Failed to load Prometheus credentials from Secrets Manager: {e}")
+
+    # Fall back to environment variables
+    username = os.environ.get("PROMETHEUS_USERNAME")
+    password = os.environ.get("PROMETHEUS_PASSWORD")
+
+    if not username or not password:
+        raise ValueError(
+            "Prometheus credentials not found. Set PROMETHEUS_USERNAME/PROMETHEUS_PASSWORD "
+            "env vars or store in Secrets Manager at node-fleet/prometheus-auth."
+        )
+
     return username, password
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
