@@ -209,15 +209,16 @@ class PredictiveScaler:
                     prediction['confidence'] = min(pattern['sample_count'] / 10.0, 1.0)
             
             # Apply weekly trend modifier
-            if current_day in weekly_patterns:
+            if current_day in weekly_patterns and historical:
                 weekly = weekly_patterns[current_day]
-                overall_avg_cpu = statistics.mean([m['cpu_percent'] for m in historical])
-                
-                # Scale prediction by weekly trend
-                if overall_avg_cpu > 0:
-                    weekly_multiplier = weekly['avg_cpu'] / overall_avg_cpu
-                    prediction['predicted_cpu'] *= weekly_multiplier
-                    prediction['predicted_memory'] *= weekly_multiplier
+                cpu_vals = [m['cpu_percent'] for m in historical if 'cpu_percent' in m]
+                if cpu_vals:
+                    overall_avg_cpu = statistics.mean(cpu_vals)
+                    # Scale prediction by weekly trend
+                    if overall_avg_cpu > 0:
+                        weekly_multiplier = weekly['avg_cpu'] / overall_avg_cpu
+                        prediction['predicted_cpu'] *= weekly_multiplier
+                        prediction['predicted_memory'] *= weekly_multiplier
             
             # Add safety margin for uncertainty
             if prediction['confidence'] < 0.5:

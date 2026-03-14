@@ -15,11 +15,17 @@ curl -sfL https://get.k3s.io | sh -s - server \
   --disable servicelb \
   --write-kubeconfig-mode 644
 
-# Wait for K3s to be ready
+# Wait for K3s to be ready (timeout after 5 minutes)
 echo "⏳ Waiting for K3s to be ready..."
-until sudo k3s kubectl get nodes | grep -q "Ready"; do
-  echo "   Still waiting..."
+WAIT_SECS=0
+until sudo k3s kubectl get nodes 2>/dev/null | grep -q "Ready"; do
+  if [ $WAIT_SECS -ge 300 ]; then
+    echo "❌ Timed out waiting for K3s after 300s"
+    exit 1
+  fi
+  echo "   Still waiting... (${WAIT_SECS}s)"
   sleep 5
+  WAIT_SECS=$((WAIT_SECS + 5))
 done
 
 echo "✅ K3s master is ready!"
@@ -123,7 +129,7 @@ spec:
     spec:
       containers:
       - name: prometheus
-        image: prom/prometheus:latest
+        image: prom/prometheus:v2.48.0
         args:
           - '--config.file=/etc/prometheus/prometheus.yml'
           - '--storage.tsdb.path=/prometheus'
@@ -165,6 +171,21 @@ EOF
 
 # Install Grafana
 echo "📈 Installing Grafana..."
+
+# Create Grafana admin secret from Secrets Manager
+echo "🔐 Fetching Grafana admin password from Secrets Manager..."
+GRAFANA_PASSWORD=$(aws secretsmanager get-secret-value \
+  --secret-id "node-fleet/grafana-admin-password" \
+  --query SecretString --output text 2>/dev/null | jq -r '.password' 2>/dev/null || echo "")
+if [ -z "$GRAFANA_PASSWORD" ]; then
+  echo "❌ ERROR: Could not fetch Grafana password from Secrets Manager (node-fleet/grafana-admin-password)"
+  exit 1
+fi
+sudo k3s kubectl create secret generic grafana-admin-secret \
+  --namespace monitoring \
+  --from-literal=admin-password="$GRAFANA_PASSWORD" \
+  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+
 cat <<EOF | sudo k3s kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -183,12 +204,15 @@ spec:
     spec:
       containers:
       - name: grafana
-        image: grafana/grafana:latest
+        image: grafana/grafana:10.2.3
         ports:
         - containerPort: 3000
         env:
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: "admin123"
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin-secret
+              key: admin-password
         - name: GF_INSTALL_PLUGINS
           value: "grafana-piechart-panel"
         volumeMounts:
@@ -289,5 +313,5 @@ echo ""
 echo "Access points:"
 echo "  Prometheus: http://\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):30090"
 echo "  Grafana:    http://\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000"
-echo "  Username: admin, Password: admin123"
+echo "  Username: admin, Password: (see Secrets Manager: node-fleet/grafana-admin-password)"
 echo ""

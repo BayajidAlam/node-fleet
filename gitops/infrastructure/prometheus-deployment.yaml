@@ -5,9 +5,8 @@ metadata:
   name: monitoring
 ---
 # Basic Auth Secret for Prometheus
-# Username: admin
-# Password: prompassword
-# Generated with: htpasswd -nBC 12 "" | tr -d ':\n'
+# Credentials are stored in AWS Secrets Manager: node-fleet/prometheus-auth
+# The bcrypt hash below is pre-generated. To regenerate: htpasswd -nBC 12 "" | tr -d ':\n'
 apiVersion: v1
 kind: Secret
 metadata:
