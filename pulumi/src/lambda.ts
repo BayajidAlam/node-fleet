@@ -32,7 +32,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   role: lambdaRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
   s3Key: lambdaPackage.key,
-  s3ObjectVersion: lambdaPackage.version,
+  s3ObjectVersion: lambdaPackage.versionId,
   timeout: 60, // 60 seconds (per spec)
   memorySize: 256, // 256 MB (per spec)
 
@@ -204,7 +204,7 @@ new aws.iam.RolePolicy("scheduler-eventbridge-policy", {
 
 export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {
   name: `${clusterName}-dynamic-scheduler`,
-  runtime: "python3.11",
+  runtime: aws.lambda.Runtime.Python3_11,
   handler: "dynamic_scheduler.lambda_handler",
   role: schedulerRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,

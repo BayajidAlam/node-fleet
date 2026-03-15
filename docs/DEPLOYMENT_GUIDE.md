@@ -18,14 +18,14 @@
 
 ### Required Tools
 
-| Tool | Version | Installation Command |
-|------|---------|---------------------|
-| **AWS CLI** | 2.x | `curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install` |
-| **Pulumi CLI** | 3.x | `curl -fsSL https://get.pulumi.com \| sh` |
-| **Node.js** | 18+ | `curl -fsSL https://deb.nodesource.com/setup_18.x \| sudo -E bash - && sudo apt install -y nodejs` |
-| **kubectl** | 1.28+ | `curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin/` |
-| **Python** | 3.11+ | `sudo apt install python3.11 python3.11-venv` |
-| **jq** | 1.6+ | `sudo apt install jq` |
+| Tool           | Version | Installation Command                                                                                                                                                     |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **AWS CLI**    | 2.x     | `curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install`                                          |
+| **Pulumi CLI** | 3.x     | `curl -fsSL https://get.pulumi.com \| sh`                                                                                                                                |
+| **Node.js**    | 18+     | `curl -fsSL https://deb.nodesource.com/setup_18.x \| sudo -E bash - && sudo apt install -y nodejs`                                                                       |
+| **kubectl**    | 1.28+   | `curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin/` |
+| **Python**     | 3.11+   | `sudo apt install python3.11 python3.11-venv`                                                                                                                            |
+| **jq**         | 1.6+    | `sudo apt install jq`                                                                                                                                                    |
 
 ### AWS Account Requirements
 
@@ -45,6 +45,7 @@
    - Elastic IPs: 2 available (for NAT Gateways)
 
 3. **AWS CLI Configuration**:
+
 ```bash
 aws configure
 # AWS Access Key ID: <your-access-key>
@@ -56,6 +57,7 @@ aws configure
 ### Local Machine Setup
 
 **Recommended Specs**:
+
 - OS: Ubuntu 20.04+ or macOS 12+
 - RAM: 4GB minimum
 - Disk: 10GB free space
@@ -130,6 +132,7 @@ pulumi preview
 ```
 
 **Expected Output**:
+
 ```
 Previewing update (dev)
 
@@ -179,7 +182,7 @@ pulumi up --yes
 pulumi stack output masterPublicIpAddress > ../master-ip.txt
 pulumi stack output masterPrivateIpAddress > ../master-private-ip.txt
 pulumi stack output vpcId > ../vpc-id.txt
-pulumi stack output lambdaFunctionName > ../lambda-function-name.txt
+pulumi stack output autoscalerFunctionName > ../lambda-function-name.txt
 
 # View all outputs
 pulumi stack output --json | jq '.'
@@ -308,15 +311,25 @@ export KUBECONFIG=$(pwd)/kubeconfig.yaml
 kubectl get nodes
 ```
 
-### Step 7: Launch Initial Worker Nodes
+### Step 7: Initial Worker Nodes
 
-The autoscaler will maintain MIN_NODES (2) workers automatically. To manually launch initial workers:
+> ✅ **Workers are automatically launched by Pulumi** (`initialWorker1` and `initialWorker2`). You do not need to launch them manually — Pulumi creates 2 workers (one in each AZ) as part of `pulumi up`.
+
+Wait 3-5 minutes after `pulumi up` completes, then verify workers joined:
 
 ```bash
-# On local machine
+kubectl get nodes
+# Expected: 1 master + 2 workers in Ready state
+```
+
+If workers did not join (check `kubectl get nodes`), manually re-launch using the spot template:
+
+```bash
+# Get outputs
 LAUNCH_TEMPLATE_ID=$(pulumi stack output workerLaunchTemplateId)
-SUBNET_1A=$(pulumi stack output privateSubnet1aId)
-SUBNET_1B=$(pulumi stack output privateSubnet1bId)
+SUBNET_IDS=$(pulumi stack output privateSubnetIds --json)
+SUBNET_1A=$(echo $SUBNET_IDS | jq -r '.[0]')
+SUBNET_1B=$(echo $SUBNET_IDS | jq -r '.[1]')
 
 # Launch worker in AZ-1a
 aws ec2 run-instances \
@@ -331,9 +344,6 @@ aws ec2 run-instances \
   --subnet-id $SUBNET_1B \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Project,Value=node-fleet},{Key=Role,Value=k3s-worker}]' \
   --region ap-southeast-1
-
-# Wait 3-5 minutes for workers to join
-watch -n 10 "kubectl get nodes"
 ```
 
 ---
@@ -398,7 +408,7 @@ curl "http://$MASTER_IP:30090/api/v1/query?query=up" | jq '.'
 
 ```bash
 # List custom metrics
-aws cloudwatch list-metrics --namespace node-fleet --region ap-southeast-1
+aws cloudwatch list-metrics --namespace NodeFleet/Autoscaler --region ap-southeast-1
 
 # Expected metrics:
 # - AutoscalerInvocations
@@ -447,7 +457,7 @@ aws cloudwatch put-metric-alarm \
   --alarm-name node-fleet-cpu-critical \
   --alarm-description "Cluster CPU > 90% for 5 minutes" \
   --metric-name ClusterCPUUtilization \
-  --namespace node-fleet \
+  --namespace NodeFleet/Autoscaler \
   --statistic Average \
   --period 300 \
   --threshold 90 \
@@ -460,7 +470,7 @@ aws cloudwatch put-metric-alarm \
   --alarm-name node-fleet-scaling-failures \
   --alarm-description "3+ scaling failures in 15 minutes" \
   --metric-name ScalingFailures \
-  --namespace node-fleet \
+  --namespace NodeFleet/Autoscaler \
   --statistic Sum \
   --period 900 \
   --threshold 3 \

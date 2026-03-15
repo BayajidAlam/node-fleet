@@ -67,6 +67,28 @@ kubeconfig
 # Test outputs
 k6-results/
 test-reports/
+htmlcov/
+test-results/
+tests/lambda/test_output.txt
+tests/test_results.txt
+tests/lambda/.coverage
+tests/lambda/.pytest_cache/
+
+# Pulumi temp/generated/log files
+pulumi/pulumi_error.log
+pulumi/pulumi_full.log
+pulumi/*.b64
+pulumi/dist/
+
+# Kubeconfig files (security risk)
+full_kubeconfig.yaml
+temp_kubeconfig.yaml
+kubeconfig.yaml
+*.kubeconfig
+
+# Private keys (already covered by *.pem but be explicit)
+node-fleet-key.pem
+pulumi/key.pem
 
 # Lambda deployment packages
 lambda/function.zip
