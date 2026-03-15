@@ -55,7 +55,7 @@ export const lambdaBucketPublicAccessBlock = new aws.s3.BucketPublicAccessBlock(
 export const lambdaPackage = new aws.s3.BucketObject("lambda-package", {
   bucket: lambdaArtifactsBucket.id,
   key: "lambda-deployment.zip",
-  source: new pulumi.asset.FileAsset("/tmp/lambda-deployment.zip"),
+  source: new pulumi.asset.FileAsset("../tmp/lambda-deployment.zip"),
   tags: {
     Name: "lambda-deployment-package",
     Project: "node-fleet",

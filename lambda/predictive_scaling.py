@@ -52,8 +52,8 @@ class PredictiveScaler:
                 'day_of_week': timestamp.weekday(),  # 0=Monday, 6=Sunday
                 'cpu_percent': str(cpu_percent),
                 'memory_percent': str(memory_percent),
-                'pending_pods': pending_pods,
-                'node_count': node_count,
+                'pending_pods': int(pending_pods),
+                'node_count': int(node_count),
                 'ttl': int((timestamp + timedelta(days=30)).timestamp())  # Expire after 30 days
             }
             

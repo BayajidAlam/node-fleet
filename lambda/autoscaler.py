@@ -184,15 +184,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if current_nodes != stored_node_count:
                     logger.info(f"Reconciling state: Metrics show {current_nodes} nodes, State showed {stored_node_count}. Using Metrics.")
             else:
-                 # If metrics show 0, it might be an error or true zero. 
-                 # If it's true zero, we want to start scaling. 
-                 # Trust metrics if it's 0 but not None? 
-                 # metrics.get defaults to 0.0. 
-                 # We'll use 0 if Metrics collected successfully (we know this from logic above)
-                 # But we must be careful of failed scraping returning 0.
-                 # Let's trust it for now to solve the bootstrap issue.
-                 current_nodes = metric_node_count
-                 logger.info(f"Metrics show 0 nodes. Using 0 to trigger bootstrap scaling.")
+                 # Prometheus returned 0 — could be scraper not ready (node-exporter/kube-state-metrics
+                 # not yet scraped) rather than a true empty cluster.
+                 # If DynamoDB has a valid stored count >= MIN_NODES, trust it to avoid runaway scaling.
+                 if stored_node_count >= MIN_NODES:
+                     current_nodes = stored_node_count
+                     logger.warning(
+                         f"Prometheus node_count=0 but DynamoDB shows {stored_node_count} nodes. "
+                         f"Trusting DynamoDB state (scrapers may not be ready yet)."
+                     )
+                 else:
+                     current_nodes = 0
+                     logger.info("Prometheus node_count=0 and DynamoDB count < MIN_NODES. Triggering bootstrap scaling.")
 
             history = current_state.get("metrics_history", [])
             

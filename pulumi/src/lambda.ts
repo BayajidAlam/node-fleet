@@ -27,7 +27,7 @@ export const autoscalerDlq = new aws.sqs.Queue("autoscaler-dlq", {
 // Lambda function for autoscaler
 export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   name: `${clusterName}-autoscaler`,
-  runtime: aws.lambda.Runtime.Python3_11,
+  runtime: "python3.11",
   handler: "autoscaler.lambda_handler",
   role: lambdaRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
@@ -204,7 +204,7 @@ new aws.iam.RolePolicy("scheduler-eventbridge-policy", {
 
 export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {
   name: `${clusterName}-dynamic-scheduler`,
-  runtime: aws.lambda.Runtime.Python3_11,
+  runtime: "python3.11",
   handler: "dynamic_scheduler.lambda_handler",
   role: schedulerRole.arn,
   s3Bucket: lambdaArtifactsBucket.id,
