@@ -15,6 +15,7 @@
       "id": 1,
       "title": "Real-Time Hourly Cost",
       "type": "stat",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -38,6 +39,7 @@
       "id": 2,
       "title": "Daily Cost Projection",
       "type": "stat",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 6,
         "y": 0,
@@ -61,6 +63,7 @@
       "id": 3,
       "title": "Monthly Cost Projection",
       "type": "stat",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 12,
         "y": 0,
@@ -101,6 +104,7 @@
       "id": 4,
       "title": "Cost Savings vs Always-On",
       "type": "stat",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 18,
         "y": 0,
@@ -109,7 +113,7 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0416 * 10))) * 100",
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0208 * 10))) * 100",
           "refId": "A"
         }
       ],
@@ -124,6 +128,7 @@
       "id": 5,
       "title": "Cost Trend (24h)",
       "type": "graph",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 4,
@@ -137,8 +142,8 @@
           "refId": "A"
         },
         {
-          "expr": "0.0416 * 10",
-          "legendFormat": "Max Cost (10 nodes)",
+          "expr": "0.0208 * 10",
+          "legendFormat": "Max Cost (10x t3.small on-demand)",
           "refId": "B"
         }
       ],
@@ -156,6 +161,7 @@
       "id": 6,
       "title": "Cost Breakdown by Instance Type",
       "type": "piechart",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 12,
@@ -179,6 +185,7 @@
       "id": 7,
       "title": "Cost Breakdown: Spot vs On-Demand",
       "type": "piechart",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 12,
         "y": 12,
@@ -197,6 +204,7 @@
       "id": 8,
       "title": "CloudWatch Billing (All AWS Services)",
       "type": "graph",
+      "datasource": "CloudWatch",
       "gridPos": {
         "x": 0,
         "y": 20,
@@ -205,6 +213,7 @@
       },
       "targets": [
         {
+          "datasource": "CloudWatch",
           "namespace": "AWS/Billing",
           "metricName": "EstimatedCharges",
           "dimensions": {
@@ -230,6 +239,7 @@
       "id": 9,
       "title": "Instance Count by Type",
       "type": "table",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 28,
@@ -238,7 +248,7 @@
       },
       "targets": [
         {
-          "expr": "count by (instance_type, lifecycle) (up{job=\"kubernetes-nodes\"})",
+          "expr": "count by (instance_type, lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
           "format": "table",
           "refId": "A"
         }

@@ -187,7 +187,7 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
         },
         {
           Effect: "Allow",
-          Action: ["cloudwatch:PutMetricData"],
+          Action: ["cloudwatch:PutMetricData", "cloudwatch:GetMetricStatistics"],
           Resource: "*",
         },
         {
@@ -212,6 +212,14 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
         {
           Effect: "Allow",
           Action: ["ssm:SendCommand", "ssm:GetCommandInvocation"],
+          Resource: "*",
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "ce:GetCostAndUsage",
+            "ce:GetDimensionValues",
+          ],
           Resource: "*",
         },
       ],

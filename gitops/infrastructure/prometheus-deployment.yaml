@@ -70,6 +70,23 @@ data:
       - job_name: 'demo-app'
         static_configs:
           - targets: ['demo-app.default.svc.cluster.local:5000']
+
+      - job_name: 'cost-exporter'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          # Keep only master/control-plane nodes (cost_exporter runs there)
+          - source_labels: [__meta_kubernetes_node_label_node_role_kubernetes_io_control_plane,
+                            __meta_kubernetes_node_label_node_role_kubernetes_io_master]
+            separator: ';'
+            action: keep
+            regex: 'true;.*|.*;true'
+          - source_labels: [__address__]
+            regex: '(.*):10250'
+            replacement: '${1}:9100'
+            target_label: __address__
+          - target_label: job
+            replacement: cost-exporter
   web.yml: |
     basic_auth_users:
       admin: $2b$10$6rh/85.e06iFC6kAhDagru8Kc1rH3sYnq1miSijL0oHwQQk.fbgMS

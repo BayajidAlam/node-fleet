@@ -73,8 +73,8 @@ class CostOptimizer:
         memory = metrics.get('memory_usage', 0)
         
         # Get average utilization over last 6 hours
-        avg_cpu = self._get_average_metric('ClusterCPU', hours=6)
-        avg_memory = self._get_average_metric('ClusterMemory', hours=6)
+        avg_cpu = self._get_average_metric('ClusterCPUUtilization', hours=6)
+        avg_memory = self._get_average_metric('ClusterMemoryUtilization', hours=6)
         
         if avg_cpu and avg_cpu < 20 and avg_memory and avg_memory < 30:
             # Cluster is significantly underutilized
@@ -164,7 +164,7 @@ class CostOptimizer:
             
             response = cloudwatch.get_metric_statistics(
                 Namespace='NodeFleet/Autoscaler',
-                MetricName='ClusterCPU',
+                MetricName='ClusterCPUUtilization',
                 Dimensions=[{'Name': 'ClusterID', 'Value': self.cluster_id}],
                 StartTime=start_time,
                 EndTime=end_time,

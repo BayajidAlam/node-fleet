@@ -111,6 +111,22 @@ data:
             regex: ([^:]+)(?::\d+)?;(\d+)
             replacement: \$1:\$2
             target_label: __address__
+
+      - job_name: 'cost-exporter'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_node_label_node_role_kubernetes_io_control_plane,
+                            __meta_kubernetes_node_label_node_role_kubernetes_io_master]
+            separator: ';'
+            action: keep
+            regex: 'true;.*|.*;true'
+          - source_labels: [__address__]
+            regex: '(.*):10250'
+            replacement: \${1}:9100
+            target_label: __address__
+          - target_label: job
+            replacement: cost-exporter
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -300,6 +316,44 @@ EOF
 # Wait for Prometheus and Grafana to be ready
 echo "⏳ Waiting for monitoring stack..."
 sleep 30
+
+# Install and start cost exporter as systemd service on master
+echo "💰 Setting up Cost Exporter..."
+sudo apt-get install -y python3 python3-pip
+sudo pip3 install boto3 prometheus-client
+
+# Download cost_exporter.py from the repo
+sudo curl -fsSL https://raw.githubusercontent.com/BayajidAlam/node-fleet/main/monitoring/cost_exporter.py \
+  -o /opt/cost_exporter.py
+
+# Create systemd service unit
+sudo tee /etc/systemd/system/cost-exporter.service > /dev/null <<'SVCEOF'
+[Unit]
+Description=Prometheus Cost Exporter for K3s Node Fleet
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=AWS_REGION=ap-southeast-1
+Environment=CLUSTER_NAME=node-fleet
+Environment=MONTHLY_BUDGET=500
+Environment=METRICS_PORT=9100
+Environment=UPDATE_INTERVAL=30
+ExecStart=/usr/bin/python3 /opt/cost_exporter.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable cost-exporter
+sudo systemctl start cost-exporter
+echo "✅ Cost exporter started on port 9100"
 
 echo ""
 echo "✅ K3s Master Setup Complete!"
