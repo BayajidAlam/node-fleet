@@ -17,6 +17,7 @@
         "w": 6,
         "h": 8
       },
+      "datasource": "Prometheus",
       "targets": [
         {
           "expr": "count(kube_node_info)",
@@ -56,6 +57,7 @@
       "id": 2,
       "title": "CPU Utilization (24h)",
       "type": "graph",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 6,
         "y": 0,
@@ -88,6 +90,7 @@
       "id": 3,
       "title": "Memory Utilization (24h)",
       "type": "graph",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 15,
         "y": 0,
@@ -120,6 +123,7 @@
       "id": 4,
       "title": "Network I/O",
       "type": "graph",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 8,
@@ -155,6 +159,7 @@
       "id": 5,
       "title": "Disk I/O",
       "type": "graph",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 12,
         "y": 8,
@@ -190,6 +195,7 @@
       "id": 6,
       "title": "Pending Pods",
       "type": "stat",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 16,
@@ -240,6 +246,7 @@
       "id": 7,
       "title": "Scaling Events Timeline",
       "type": "graph",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 6,
         "y": 16,
@@ -277,6 +284,7 @@
       "id": 8,
       "title": "Pod Distribution by Node",
       "type": "heatmap",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
         "y": 22,

@@ -10,7 +10,8 @@
     {
       "id": 1,
       "title": "Lambda Execution Duration",
-      "type": "histogram",
+      "type": "timeseries",
+      "datasource": "CloudWatch",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -45,6 +46,7 @@
       "id": 2,
       "title": "Lambda Invocation Count",
       "type": "stat",
+      "datasource": "CloudWatch",
       "gridPos": {
         "x": 12,
         "y": 0,
@@ -93,6 +95,7 @@
       "id": 3,
       "title": "Scaling Decisions",
       "type": "piechart",
+      "datasource": "CloudWatch",
       "gridPos": {
         "x": 18,
         "y": 0,
@@ -101,7 +104,7 @@
       },
       "targets": [
         {
-          "namespace": "node-fleet",
+          "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScaleUpEvents",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -111,7 +114,7 @@
           "type": "cloudwatch"
         },
         {
-          "namespace": "node-fleet",
+          "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScaleDownEvents",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -121,12 +124,12 @@
           "type": "cloudwatch"
         },
         {
-          "namespace": "node-fleet",
-          "metricName": "NoActionEvents",
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "AutoscalerInvocations",
           "dimensions": {},
           "statistics": ["Sum"],
           "refId": "C",
-          "alias": "No Action",
+          "alias": "Total Invocations",
           "id": "no_action",
           "type": "cloudwatch"
         }
@@ -143,7 +146,8 @@
     {
       "id": 4,
       "title": "Node Join Latency",
-      "type": "histogram",
+      "type": "timeseries",
+      "datasource": "CloudWatch",
       "gridPos": {
         "x": 0,
         "y": 8,
@@ -152,7 +156,7 @@
       },
       "targets": [
         {
-          "namespace": "node-fleet",
+          "namespace": "NodeFleet/Autoscaler",
           "metricName": "NodeJoinLatency",
           "dimensions": {},
           "statistics": ["Average", "p50", "p95", "p99", "Maximum"],
@@ -181,6 +185,7 @@
       "id": 5,
       "title": "Cost Savings Estimate",
       "type": "gauge",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 12,
         "y": 8,
@@ -189,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0416 * 10))) * 100",
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0208 * 10))) * 100",
           "refId": "A",
           "legendFormat": "Savings vs Always-On"
         }
@@ -231,6 +236,7 @@
       "id": 6,
       "title": "Lambda Errors",
       "type": "graph",
+      "datasource": "CloudWatch",
       "gridPos": {
         "x": 0,
         "y": 16,
@@ -248,7 +254,7 @@
           "refId": "A"
         },
         {
-          "namespace": "node-fleet",
+          "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScalingFailures",
           "dimensions": {},
           "statistics": ["Sum"],
@@ -269,6 +275,7 @@
       "id": 7,
       "title": "Current Node Count",
       "type": "graph",
+      "datasource": "-- Mixed --",
       "gridPos": {
         "x": 12,
         "y": 16,
@@ -277,14 +284,16 @@
       },
       "targets": [
         {
-          "namespace": "node-fleet",
+          "namespace": "NodeFleet/Autoscaler",
           "metricName": "CurrentNodeCount",
           "dimensions": {},
           "statistics": ["Average"],
+          "datasource": "CloudWatch",
           "refId": "A"
         },
         {
           "expr": "count(kube_node_info)",
+          "datasource": "Prometheus",
           "refId": "B",
           "legendFormat": "Actual Nodes (Prometheus)"
         }
