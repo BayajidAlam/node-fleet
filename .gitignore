@@ -93,6 +93,42 @@ pulumi/key.pem
 # Lambda deployment packages
 lambda/function.zip
 lambda/package/
+lambda/*.dist-info/
+lambda/*.dist-info
+lambda/bin/
+lambda/venv/
+lambda/build_check/
+lambda/package_build/
+lambda/tests/
+# Installed Python deps in lambda/ (pip -t installs)
+lambda/requests/
+lambda/urllib3/
+lambda/certifi/
+lambda/charset_normalizer/
+lambda/idna/
+lambda/cryptography/
+lambda/paramiko/
+lambda/bcrypt/
+lambda/cffi/
+lambda/nacl/
+lambda/pynacl-*.dist-info/
+lambda/yaml/
+lambda/_yaml/
+lambda/six.py
+lambda/six-*.dist-info
+lambda/kubernetes/
+lambda/google/
+lambda/oauthlib/
+lambda/requests_oauthlib/
+lambda/pyasn1/
+lambda/pyasn1_modules/
+lambda/dateutil/
+lambda/websocket/
+lambda/pycparser/
+lambda/*.pyd
+lambda/*.so
+lambda/httmock.py
+lambda/pylab.py
 
 # Node modules (if any)
 node_modules/
