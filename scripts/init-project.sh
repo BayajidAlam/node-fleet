@@ -15,7 +15,15 @@ echo -e "${BLUE}📋 Checking prerequisites...${NC}"
 
 command -v node >/dev/null 2>&1 || { echo "❌ Node.js required. Install from https://nodejs.org"; exit 1; }
 command -v npm >/dev/null 2>&1 || { echo "❌ npm required. Install with Node.js"; exit 1; }
-command -v python3.11 >/dev/null 2>&1 || { echo "❌ Python 3.11 required. Install from https://python.org"; exit 1; }
+# Accept python3.11, python3, or python (any version >= 3.11)
+PYTHON_CMD=""
+for cmd in python3.11 python3 python; do
+  if command -v $cmd >/dev/null 2>&1; then
+    VER=$($cmd -c "import sys; print(sys.version_info >= (3,11))" 2>/dev/null)
+    if [ "$VER" = "True" ]; then PYTHON_CMD=$cmd; break; fi
+  fi
+done
+[ -z "$PYTHON_CMD" ] && { echo "❌ Python 3.11+ required. Install from https://python.org"; exit 1; }
 command -v aws >/dev/null 2>&1 || { echo "❌ AWS CLI required. Install: pip install awscli"; exit 1; }
 
 echo -e "${GREEN}✅ All prerequisites installed${NC}"
@@ -124,7 +132,7 @@ cd ..
 echo -e "${BLUE}🐍 Setting up Python environment for Lambda...${NC}"
 cd lambda
 
-python3.11 -m venv venv
+$PYTHON_CMD -m venv venv
 source venv/bin/activate
 
 # Create requirements.txt
