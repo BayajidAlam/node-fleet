@@ -7,8 +7,8 @@ echo "Building Lambda deployment package..."
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-# Create temp directory
-BUILD_DIR="/tmp/lambda-build-$$"
+# Create temp directory (use local path to avoid Windows /tmp mapping issues)
+BUILD_DIR="$SCRIPT_DIR/.lambda-build-$$"
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
@@ -22,7 +22,7 @@ fi
 
 # Install dependencies into the build directory
 echo "Installing dependencies via wheel extraction..."
-WHEEL_DIR="/tmp/lambda-wheels-$$"
+WHEEL_DIR="$SCRIPT_DIR/.lambda-wheels-$$"
 mkdir -p "$WHEEL_DIR"
 
 # Download dependencies
@@ -56,14 +56,22 @@ find "$BUILD_DIR" -name "*.egg-info" -exec rm -rf {} +
 find "$BUILD_DIR" -name "*.dist-info" -exec rm -rf {} +
 rm -rf "$BUILD_DIR/boto3" "$BUILD_DIR/botocore" "$BUILD_DIR/s3transfer" # Just in case they got pulled in
 
+OUTPUT_ZIP="$SCRIPT_DIR/lambda-deployment.zip"
+
 # Create zip
 echo "Creating deployment package..."
 cd "$BUILD_DIR"
-rm -f /tmp/lambda-deployment.zip
-zip -r /tmp/lambda-deployment.zip . -q
+rm -f "$OUTPUT_ZIP"
+zip -r "$OUTPUT_ZIP" . -q
 
-echo "Lambda package created: /tmp/lambda-deployment.zip"
-ls -lh /tmp/lambda-deployment.zip
+echo "Lambda package created: $OUTPUT_ZIP"
+ls -lh "$OUTPUT_ZIP"
 
 # Cleanup
-# rm -rf "$BUILD_DIR"
+rm -rf "$BUILD_DIR"
+
+echo ""
+echo "To deploy:"
+echo "  BUCKET=node-fleet-cluster-lambda-artifacts-dev"
+echo "  aws s3 cp $OUTPUT_ZIP s3://\$BUCKET/lambda-deployment.zip --region ap-southeast-1"
+echo "  aws lambda update-function-code --function-name node-fleet-cluster-autoscaler --s3-bucket \$BUCKET --s3-key lambda-deployment.zip --region ap-southeast-1"
