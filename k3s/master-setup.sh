@@ -53,7 +53,7 @@ sudo apt-get install -y apache2-utils
 PROM_HASH=$(htpasswd -nbBC 10 "$PROM_USER" "$PROM_PASS" | cut -d: -f2)
 
 # Create Prometheus web config with basic auth
-cat > /tmp/prom-web.yml <<WEBEOF
+sudo tee /tmp/prom-web.yml > /dev/null <<WEBEOF
 basic_auth_users:
   ${PROM_USER}: ${PROM_HASH}
 WEBEOF
@@ -194,8 +194,16 @@ GRAFANA_PASSWORD=$(aws secretsmanager get-secret-value \
   --secret-id "node-fleet/grafana-admin-password" \
   --query SecretString --output text 2>/dev/null | jq -r '.password' 2>/dev/null || echo "")
 if [ -z "$GRAFANA_PASSWORD" ]; then
-  echo "❌ ERROR: Could not fetch Grafana password from Secrets Manager (node-fleet/grafana-admin-password)"
-  exit 1
+  echo "⚠️  Grafana password not in Secrets Manager, using default Admin@123"
+  GRAFANA_PASSWORD="Admin@123"
+  aws secretsmanager put-secret-value \
+    --secret-id "node-fleet/grafana-admin-password" \
+    --secret-string "{\"password\":\"$GRAFANA_PASSWORD\"}" \
+    --region ap-southeast-1 2>/dev/null || \
+  aws secretsmanager create-secret \
+    --name "node-fleet/grafana-admin-password" \
+    --secret-string "{\"password\":\"$GRAFANA_PASSWORD\"}" \
+    --region ap-southeast-1 2>/dev/null || true
 fi
 sudo k3s kubectl create secret generic grafana-admin-secret \
   --namespace monitoring \

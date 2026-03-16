@@ -19,7 +19,7 @@ command -v npm >/dev/null 2>&1 || { echo "❌ npm required. Install with Node.js
 PYTHON_CMD=""
 for cmd in python3.11 python3 python; do
   if command -v $cmd >/dev/null 2>&1; then
-    VER=$($cmd -c "import sys; print(sys.version_info >= (3,11))" 2>/dev/null)
+    VER=$($cmd -c "import sys; print(sys.version_info >= (3,11))" 2>/dev/null | tr -d '\r\n')
     if [ "$VER" = "True" ]; then PYTHON_CMD=$cmd; break; fi
   fi
 done
@@ -100,7 +100,7 @@ npm install --silent
 # Initialize Pulumi stack
 echo -e "${BLUE}🔧 Initializing Pulumi stack...${NC}"
 pulumi login --local 2>/dev/null || pulumi login
-pulumi stack init node-fleet-dev --non-interactive 2>/dev/null || pulumi stack select node-fleet-dev
+pulumi stack init dev --non-interactive 2>/dev/null || pulumi stack select dev 2>/dev/null || true
 
 # Configure Pulumi
 echo -e "${BLUE}⚙️  Configuring Pulumi stack...${NC}"
@@ -133,7 +133,12 @@ echo -e "${BLUE}🐍 Setting up Python environment for Lambda...${NC}"
 cd lambda
 
 $PYTHON_CMD -m venv venv
-source venv/bin/activate
+# Support both Linux (bin/activate) and Windows Git Bash (Scripts/activate)
+if [ -f venv/Scripts/activate ]; then
+  source venv/Scripts/activate
+else
+  source venv/bin/activate
+fi
 
 # Create requirements.txt
 cat > requirements.txt <<'EOF'
@@ -145,7 +150,6 @@ pytest-mock==3.12.0
 moto==4.2.10
 EOF
 
-pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 
 deactivate
