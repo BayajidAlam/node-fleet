@@ -1,1 +1,0 @@
-{"statusCode": 200, "body": "Scaling completed: scale_up - {'success': True, 'instance_ids': ['i-08818eb46da277409', 'i-0fff1b709a3fdd150'], 'spot_count': 1, 'ondemand_count': 1, 'ready_nodes': [], 'node_join_latency_ms': 0}"}

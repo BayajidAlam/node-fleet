@@ -106,10 +106,19 @@ export const workerSpotTemplate = new aws.ec2.LaunchTemplate(
       {
         resourceType: "instance",
         tags: {
+          Name: `${clusterName}-worker-spot`,
           Role: "k3s-worker",
           Project: "node-fleet",
           ManagedBy: "autoscaler",
           InstanceType: "spot",
+        },
+      },
+      {
+        resourceType: "volume",
+        tags: {
+          Role: "k3s-worker",
+          Project: "node-fleet",
+          ManagedBy: "autoscaler",
         },
       },
     ],

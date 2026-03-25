@@ -29,6 +29,7 @@ Thumbs.db
 *-key.pem
 k3s-kubeconfig.yaml
 node-fleet-key.pem
+kubeconfig.yaml
 
 # Logs
 *.log
@@ -38,7 +39,13 @@ logs/
 coverage/
 test-results/
 .pytest_cache/
+htmlcov/
+.coverage
+lambda-out.json
 
 # Backups
 backups/*.json
 backups/*.tar.gz
+
+# Temp files
+tmp/

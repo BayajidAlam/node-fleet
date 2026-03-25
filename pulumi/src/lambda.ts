@@ -65,7 +65,6 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   tags: {
     Name: `${clusterName}-autoscaler`,
     Project: "node-fleet",
-    LastUpdated: "2026-01-28T01:00:00",
   },
 });
 
@@ -78,12 +77,10 @@ export const autoscalerSchedule = new aws.cloudwatch.EventRule(
     scheduleExpression: "rate(2 minutes)",
     tags: {
       Project: "node-fleet",
-      LastUpdated: "2026-01-28T01:00:00",
     },
   },
 );
 
-// EventBridge target - invoke Lambda
 export const autoscalerTarget = new aws.cloudwatch.EventTarget(
   "autoscaler-target",
   {
@@ -220,7 +217,6 @@ export const schedulerLambda = new aws.lambda.Function("dynamic-scheduler", {
   },
   tags: {
     Project: "node-fleet",
-    LastUpdated: "2026-01-28T01:00:00",
   },
 });
 

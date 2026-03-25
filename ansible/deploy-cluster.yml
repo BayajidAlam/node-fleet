@@ -1,0 +1,261 @@
+---
+# ansible/deploy-cluster.yml
+# Full node-fleet K3s cluster deployment playbook
+#
+# Usage (from repo root):
+#   MASTER_IP=<ip> ansible-playbook ansible/deploy-cluster.yml -i "localhost," -c local
+#
+# Or with an explicit inventory:
+#   ansible-playbook ansible/deploy-cluster.yml -i ansible/inventory.ini
+#
+# Prerequisites:
+#   pip install ansible
+#   export MASTER_IP=<your-master-public-ip>
+#   export AWS_REGION=ap-southeast-1   (default)
+
+- name: node-fleet — Pre-flight checks
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+    ssh_key: "{{ lookup('env', 'SSH_KEY') | default('node-fleet-key.pem', true) }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') | default('ap-southeast-1', true) }}"
+    project_root: "{{ playbook_dir }}/.."
+
+  tasks:
+    - name: Verify MASTER_IP is set
+      ansible.builtin.fail:
+        msg: "MASTER_IP environment variable must be set. Run: export MASTER_IP=<ip>"
+      when: master_ip == ""
+
+    - name: Check SSH key exists
+      ansible.builtin.stat:
+        path: "{{ project_root }}/{{ ssh_key }}"
+      register: key_stat
+      failed_when: not key_stat.stat.exists
+
+    - name: Check AWS CLI available
+      ansible.builtin.command: aws sts get-caller-identity
+      changed_when: false
+      register: aws_check
+      failed_when: aws_check.rc != 0
+
+    - name: Print AWS identity
+      ansible.builtin.debug:
+        msg: "AWS account verified: {{ (aws_check.stdout | from_json).Account }}"
+
+- name: node-fleet — Wait for K3s master
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+    ssh_key: "{{ lookup('env', 'SSH_KEY') | default('node-fleet-key.pem', true) }}"
+    project_root: "{{ playbook_dir }}/.."
+    ssh_opts: "-i {{ project_root }}/{{ ssh_key }} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+
+  tasks:
+    - name: Wait for SSH on master to be available
+      ansible.builtin.wait_for:
+        host: "{{ master_ip }}"
+        port: 22
+        delay: 10
+        timeout: 300
+        state: started
+
+    - name: Wait for K3s service to be active (up to 5 minutes)
+      ansible.builtin.shell: |
+        ssh {{ ssh_opts }} ubuntu@{{ master_ip }} "sudo systemctl is-active k3s"
+      register: k3s_status
+      retries: 20
+      delay: 15
+      until: k3s_status.stdout == "active"
+      changed_when: false
+
+    - name: Print K3s status
+      ansible.builtin.debug:
+        msg: "K3s master is active!"
+
+- name: node-fleet — Fetch kubeconfig
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+    ssh_key: "{{ lookup('env', 'SSH_KEY') | default('node-fleet-key.pem', true) }}"
+    project_root: "{{ playbook_dir }}/.."
+    ssh_opts: "-i {{ project_root }}/{{ ssh_key }} -o StrictHostKeyChecking=no"
+
+  tasks:
+    - name: Fetch kubeconfig from master
+      ansible.builtin.shell: |
+        ssh {{ ssh_opts }} ubuntu@{{ master_ip }} \
+          "sudo cat /etc/rancher/k3s/k3s.yaml" > /tmp/k3s-kubeconfig.yaml
+        sed -i "s/127.0.0.1/{{ master_ip }}/g" /tmp/k3s-kubeconfig.yaml
+      changed_when: true
+
+    - name: Verify cluster access
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl get nodes
+      register: nodes_output
+      changed_when: false
+
+    - name: Show cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_output.stdout_lines }}"
+
+- name: node-fleet — Deploy monitoring stack
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+    ssh_key: "{{ lookup('env', 'SSH_KEY') | default('node-fleet-key.pem', true) }}"
+    project_root: "{{ playbook_dir }}/.."
+    ssh_opts: "-i {{ project_root }}/{{ ssh_key }} -o StrictHostKeyChecking=no"
+
+  tasks:
+    - name: Deploy Prometheus (with auth) via gitops manifests
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl apply -f {{ project_root }}/gitops/infrastructure/prometheus-deployment.yaml
+      register: prom_deploy
+      changed_when: "'configured' in prom_deploy.stdout or 'created' in prom_deploy.stdout"
+
+    - name: Deploy Grafana via gitops manifests
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl apply -f {{ project_root }}/gitops/infrastructure/grafana.yaml
+      register: grafana_deploy
+      changed_when: "'configured' in grafana_deploy.stdout or 'created' in grafana_deploy.stdout"
+
+    - name: Wait for Prometheus pod to be ready
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl wait \
+          --for=condition=ready pod -l app=prometheus \
+          -n monitoring --timeout=120s
+      register: prom_wait
+      changed_when: false
+      failed_when: prom_wait.rc != 0
+
+    - name: Wait for Grafana pod to be ready
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl wait \
+          --for=condition=ready pod -l app=grafana \
+          -n monitoring --timeout=120s
+      register: grafana_wait
+      changed_when: false
+      failed_when: grafana_wait.rc != 0
+
+- name: node-fleet — Deploy demo application
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+    project_root: "{{ playbook_dir }}/.."
+
+  tasks:
+    - name: Apply demo-app manifests
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl apply -f {{ project_root }}/gitops/apps/demo-app/
+      register: demo_deploy
+      changed_when: "'configured' in demo_deploy.stdout or 'created' in demo_deploy.stdout"
+
+    - name: Wait for demo-app pods to be ready
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl wait \
+          --for=condition=ready pod -l app=demo-app \
+          --timeout=120s
+      register: demo_wait
+      changed_when: false
+      ignore_errors: true # Non-fatal — demo app may take longer
+
+- name: node-fleet — Configure Grafana
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+    ssh_key: "{{ lookup('env', 'SSH_KEY') | default('node-fleet-key.pem', true) }}"
+    project_root: "{{ playbook_dir }}/.."
+    ssh_opts: "-i {{ project_root }}/{{ ssh_key }} -o StrictHostKeyChecking=no -o IdentitiesOnly=yes"
+
+  tasks:
+    - name: Upload Grafana config script and dashboards to master
+      ansible.builtin.shell: |
+        scp {{ ssh_opts }} \
+          {{ project_root }}/scripts/configure-grafana-cloudwatch.sh \
+          {{ project_root }}/monitoring/grafana-dashboards/*.json \
+          ubuntu@{{ master_ip }}:/home/ubuntu/dashboards/ 2>/dev/null || \
+        ( ssh {{ ssh_opts }} ubuntu@{{ master_ip }} "mkdir -p /home/ubuntu/dashboards" && \
+          scp {{ ssh_opts }} \
+            {{ project_root }}/scripts/configure-grafana-cloudwatch.sh \
+            {{ project_root }}/monitoring/grafana-dashboards/*.json \
+            ubuntu@{{ master_ip }}:/home/ubuntu/dashboards/ )
+      changed_when: true
+
+    - name: Run Grafana configuration script on master
+      ansible.builtin.shell: |
+        ssh {{ ssh_opts }} ubuntu@{{ master_ip }} \
+          "chmod +x /home/ubuntu/dashboards/configure-grafana-cloudwatch.sh && \
+           DASHBOARD_DIR=/home/ubuntu/dashboards \
+           /home/ubuntu/dashboards/configure-grafana-cloudwatch.sh"
+      register: grafana_config
+      changed_when: true
+      ignore_errors: true # Non-fatal if Grafana not yet ready
+
+    - name: Show Grafana config output
+      ansible.builtin.debug:
+        msg: "{{ grafana_config.stdout_lines | default(['No output']) }}"
+
+- name: node-fleet — Build and deploy Lambda
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aws_region: "{{ lookup('env', 'AWS_REGION') | default('ap-southeast-1', true) }}"
+    project_root: "{{ playbook_dir }}/.."
+
+  tasks:
+    - name: Build Lambda deployment package
+      ansible.builtin.shell: |
+        cd {{ project_root }}/pulumi && bash build-lambda.sh
+      register: lambda_build
+      changed_when: true
+
+    - name: Upload Lambda package to S3
+      ansible.builtin.shell: |
+        BUCKET=$(cd {{ project_root }}/pulumi && pulumi stack output lambdaArtifactsBucketName 2>/dev/null || echo "")
+        if [ -z "$BUCKET" ]; then
+          echo "WARNING: Could not determine S3 bucket from pulumi output. Run 'pulumi up' first."
+          exit 0
+        fi
+        aws s3 cp {{ project_root }}/pulumi/lambda-deployment.zip \
+          s3://$BUCKET/lambda-deployment.zip \
+          --region {{ aws_region }}
+        aws lambda update-function-code \
+          --function-name $(cd {{ project_root }}/pulumi && pulumi stack output autoscalerFunctionName 2>/dev/null) \
+          --s3-bucket $BUCKET \
+          --s3-key lambda-deployment.zip \
+          --region {{ aws_region }}
+      register: lambda_deploy
+      changed_when: true
+      ignore_errors: true
+
+- name: node-fleet — Print deployment summary
+  hosts: localhost
+  gather_facts: false
+  vars:
+    master_ip: "{{ lookup('env', 'MASTER_IP') }}"
+
+  tasks:
+    - name: Show final status
+      ansible.builtin.shell: |
+        KUBECONFIG=/tmp/k3s-kubeconfig.yaml kubectl get nodes,pods -A --field-selector=metadata.namespace=monitoring 2>/dev/null || true
+      register: final_status
+      changed_when: false
+
+    - name: Deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================"
+          - "node-fleet Deployment Complete!"
+          - "======================================"
+          - "Prometheus : http://{{ master_ip }}:30090"
+          - "Grafana    : http://{{ master_ip }}:30300"
+          - "Demo App   : http://{{ master_ip }}:30080"
+          - "Autoscaler : Lambda invoked every 2 minutes via EventBridge"
+          - "======================================"
