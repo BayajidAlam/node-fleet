@@ -46,6 +46,9 @@ ignorePatterns:
 ## 📚 Always Read First
 
 1. **[.agents/CONTEXT.md](.agents/CONTEXT.md)** — MANDATORY. Complete architecture, thresholds, secrets, data flow.
+2. **[.agents/skills/python-lambda-backend/SKILL.md](.agents/skills/python-lambda-backend/SKILL.md)** — Scaling logic, window math, packaging, testing patterns.
+3. **[.agents/skills/aws-cloud-patterns/SKILL.md](.agents/skills/aws-cloud-patterns/SKILL.md)** — boto3 patterns, DynamoDB locking, SSM, Secrets Manager.
+4. **[.agents/skills/prometheus-monitoring/SKILL.md](.agents/skills/prometheus-monitoring/SKILL.md)** — PromQL queries, metrics_collector patterns.
 
 ---
 

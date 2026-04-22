@@ -243,10 +243,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             action = decision_engine.evaluate(metrics, history=history, custom_metrics=custom_metrics_eval)
             logger.info(f"Reactive scaling decision: {action}")
             
-            # Predictive scaling check (only if enabled, no immediate action needed, and close to next hour)
-            # "Pre-scale 10 minutes before known high-traffic periods" implies checking ~10 mins before hour change
-            current_minute = datetime.now(timezone.utc).minute
-            if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE and action["action"] == "none" and current_minute >= 50:
+            # Predictive scaling: run every invocation so we pre-scale before any predicted high-traffic period
+            if ENABLE_PREDICTIVE_SCALING and METRICS_HISTORY_TABLE and action["action"] == "none":
                 logger.info("Checking predictive scaling recommendations")
                 predictor = PredictiveScaler(METRICS_HISTORY_TABLE)
                 prediction = predictor.predict_next_hour_load(metrics)

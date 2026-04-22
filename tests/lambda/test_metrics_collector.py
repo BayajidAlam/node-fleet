@@ -80,11 +80,75 @@ def test_collect_metrics_no_url():
 
 
 def test_collect_metrics_connection_error(mock_requests):
-    """Test handling of Prometheus connection errors"""
-    # Per-metric errors are caught, and 0.0 is returned for that metric
+    """Per-metric errors caught, 0.0 returned for that metric"""
     mock_requests.side_effect = Exception("Connection refused")
-    
+
     metrics = collect_metrics("http://localhost:9090", use_cache=False)
-    
+
     assert metrics["cpu_usage"] == 0.0
     assert metrics["memory_usage"] == 0.0
+
+
+def test_collect_metrics_with_auth_credentials(mock_requests):
+    """Basic auth passed when username/password provided"""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        'status': 'success', 'data': {'result': [{'value': ['0', '60.0']}]}
+    }
+    mock_requests.return_value = mock_response
+
+    collect_metrics("http://localhost:9090", username="admin", password="secret", use_cache=False)
+
+    call_kwargs = mock_requests.call_args[1]
+    assert call_kwargs.get('auth') == ('admin', 'secret')
+
+
+def test_collect_metrics_partial_success(mock_requests):
+    """Some queries fail — successful metrics returned, failed ones default 0.0"""
+    def side_effect(*args, **kwargs):
+        query = kwargs.get('params', {}).get('query', '')
+        if 'cpu' in query:
+            raise Exception("timeout")
+        resp = MagicMock()
+        resp.json.return_value = {'status': 'success', 'data': {'result': [{'value': ['0', '65.0']}]}}
+        return resp
+
+    mock_requests.side_effect = side_effect
+
+    metrics = collect_metrics("http://localhost:9090", use_cache=False)
+
+    assert metrics["cpu_usage"] == 0.0       # Failed query → 0
+    assert metrics["memory_usage"] == 65.0   # Succeeded
+
+
+def test_collect_metrics_status_error(mock_requests):
+    """Prometheus returns status=error — metric defaults to 0.0"""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        'status': 'error', 'errorType': 'bad_data', 'error': 'invalid query'
+    }
+    mock_requests.return_value = mock_response
+
+    metrics = collect_metrics("http://localhost:9090", use_cache=False)
+
+    assert metrics["cpu_usage"] == 0.0
+
+
+def test_collect_metrics_returns_node_count(mock_requests):
+    """node_count included in returned metrics"""
+    mock_response = MagicMock()
+    mock_response.json.side_effect = [
+        {'status': 'success', 'data': {'result': [{'value': ['0', '55.0']}]}},  # CPU
+        {'status': 'success', 'data': {'result': [{'value': ['0', '60.0']}]}},  # Memory
+        {'status': 'success', 'data': {'result': [{'value': ['0', '0']}]}},     # Pending
+        {'status': 'success', 'data': {'result': [{'value': ['0', '4']}]}},     # Node count
+        {'status': 'success', 'data': {'result': []}},
+        {'status': 'success', 'data': {'result': []}},
+        {'status': 'success', 'data': {'result': []}},
+        {'status': 'success', 'data': {'result': []}},
+    ]
+    mock_requests.return_value = mock_response
+
+    metrics = collect_metrics("http://localhost:9090", use_cache=False)
+
+    assert metrics["node_count"] == 4.0

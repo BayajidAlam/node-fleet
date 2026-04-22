@@ -1,679 +1,364 @@
-# node-fleet K3s Autoscaler - Troubleshooting Guide
-
-## Table of Contents
-
-1. [Quick Diagnostic Commands](#quick-diagnostic-commands)
-2. [Lambda Function Issues](#lambda-function-issues)
-3. [K3s Cluster Issues](#k3s-cluster-issues)
-4. [Prometheus & Monitoring Issues](#prometheus--monitoring-issues)
-5. [Networking & Connectivity Issues](#networking--connectivity-issues)
-6. [DynamoDB & State Management Issues](#dynamodb--state-management-issues)
-7. [EC2 Instance Issues](#ec2-instance-issues)
-8. [Emergency Procedures](#emergency-procedures)
+# node-fleet — Troubleshooting Guide
 
 ---
 
-## Quick Diagnostic Commands
-
-### Check Overall System Health
+## Quick Diagnostics
 
 ```bash
-# Check Lambda execution status
-aws logs tail /aws/lambda/node-fleet-dev-autoscaler --since 10m --region ap-southeast-1
-
-# Check K3s cluster nodes
+# Check cluster state
 kubectl get nodes -o wide
+kubectl get pods --all-namespaces
 
-# Check Prometheus health
-curl -s http://$(cat master-ip.txt):30090/api/v1/query?query=up | jq '.data.result[] | {job: .metric.job, status: .value[1]}'
+# Check autoscaler state
+aws dynamodb get-item \
+  --table-name k3s-autoscaler-state \
+  --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
+  --region ap-southeast-1 | jq .
 
-# Check DynamoDB state
-aws dynamodb get-item --table-name node-fleet-dev-state --key '{"cluster_id": {"S": "node-fleet-cluster"}}' --region ap-southeast-1 | jq '.Item'
+# Stream Lambda logs
+aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow
 
-# Check CloudWatch metrics (last 5 min)
-aws cloudwatch get-metric-statistics \
-  --namespace node-fleet \
-  --metric-name CurrentNodeCount \
-  --start-time $(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%S) \
-  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
-  --period 60 \
-  --statistics Average \
-  --region ap-southeast-1
-```
+# Check EventBridge status
+aws events describe-rule \
+  --name node-fleet-autoscaler-trigger \
+  --region ap-southeast-1 | jq '.State'
 
----
-
-## Lambda Function Issues
-
-### Issue 1: Lambda Function Not Executing
-
-**Symptoms**:
-
-- No logs in CloudWatch for 10+ minutes
-- EventBridge rule shows no invocations
-
-**Diagnosis**:
-
-```bash
-# Check EventBridge rule state
-aws events describe-rule --name node-fleet-dev-autoscaler-schedule --region ap-southeast-1
-
-# Check Lambda function state
-aws lambda get-function --function-name node-fleet-dev-autoscaler --region ap-southeast-1 | jq '.Configuration.State'
-
-# Check EventBridge target
-aws events list-targets-by-rule --rule node-fleet-dev-autoscaler-schedule --region ap-southeast-1
-```
-
-**Solutions**:
-
-```bash
-# If EventBridge rule is DISABLED
-aws events enable-rule --name node-fleet-dev-autoscaler-schedule --region ap-southeast-1
-
-# If Lambda is in Failed state
-aws lambda update-function-code \
-  --function-name node-fleet-dev-autoscaler \
-  --zip-file fileb://lambda/autoscaler.zip \
-  --region ap-southeast-1
-
-# Manually trigger Lambda to test
+# Test Lambda manually
 aws lambda invoke \
-  --function-name node-fleet-dev-autoscaler \
-  --payload '{}' \
-  --region ap-southeast-1 \
-  response.json && cat response.json
+  --function-name node-fleet-cluster-autoscaler \
+  --payload '{"source":"manual-test"}' \
+  /tmp/lambda-out.json && cat /tmp/lambda-out.json
 ```
 
 ---
 
-### Issue 2: Lambda Timeout (Execution > 60s)
+## Issue Reference
 
-**Symptoms**:
+### 1. Lambda Can't Reach Prometheus
 
-- CloudWatch logs show "Task timed out after 60.00 seconds"
-- Scaling operations incomplete
+**Symptom**: Lambda logs show `ConnectionError: HTTPConnectionPool(host='10.0.11.x', port=30090)` or `requests.exceptions.ConnectTimeout`
 
-**Diagnosis**:
+**Cause**: Security group missing inbound rule for port 30090 from Lambda SG, OR Lambda not in the correct VPC/subnet.
 
+**Fix**:
 ```bash
-# Check average execution duration
-aws logs filter-log-events \
-  --log-group-name /aws/lambda/node-fleet-dev-autoscaler \
-  --start-time $(date -u -d '1 hour ago' +%s)000 \
-  --filter-pattern "Duration" \
-  --region ap-southeast-1 | grep Duration
-```
-
-**Solutions**:
-
-```bash
-# Increase Lambda timeout to 120s
-aws lambda update-function-configuration \
-  --function-name node-fleet-dev-autoscaler \
-  --timeout 120 \
-  --region ap-southeast-1
-
-# Root causes to investigate:
-# 1. Prometheus queries slow → Check Prometheus pod resource limits
-# 2. kubectl drain timeout → Reduce drain timeout in code (300s → 180s)
-# 3. DynamoDB lock contention → Check for stuck locks
-```
-
----
-
-### Issue 3: Lambda Cannot Connect to Prometheus
-
-**Symptoms**:
-
-- Error: "ConnectionError: HTTPConnectionPool(host='10.0.11.x', port=30090)"
-- Lambda logs show Prometheus query failures
-
-**Diagnosis**:
-
-```bash
-# Check Lambda VPC configuration
+# Verify Lambda is in VPC
 aws lambda get-function-configuration \
-  --function-name node-fleet-dev-autoscaler \
-  --region ap-southeast-1 | jq '.VpcConfig'
+  --function-name node-fleet-cluster-autoscaler | jq '.VpcConfig'
 
-# Verify Lambda is in correct subnets (private subnets)
-# Verify security groups allow outbound to master:30090
-
-# Test connectivity from Lambda (create test function)
-cat > /tmp/test-lambda.py << 'EOF'
-import requests
-def lambda_handler(event, context):
-    try:
-        response = requests.get('http://10.0.11.50:30090/api/v1/query?query=up', timeout=5)
-        return {"statusCode": 200, "body": response.text}
-    except Exception as e:
-        return {"statusCode": 500, "body": str(e)}
-EOF
-```
-
-**Solutions**:
-
-```bash
-# Fix 1: Update Lambda security group egress rules
-LAMBDA_SG=$(aws lambda get-function-configuration --function-name node-fleet-dev-autoscaler --query 'VpcConfig.SecurityGroupIds[0]' --output text --region ap-southeast-1)
-
-aws ec2 authorize-security-group-egress \
-  --group-id $LAMBDA_SG \
-  --protocol tcp \
-  --port 30090 \
-  --cidr 10.0.0.0/16 \
-  --region ap-southeast-1
-
-# Fix 2: Update master security group ingress rules
-MASTER_SG=$(aws ec2 describe-instances \
-  --filters "Name=tag:Role,Values=k3s-master" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' \
-  --output text \
-  --region ap-southeast-1)
+# Add missing SG rule (if not present)
+SG_MASTER=$(aws ec2 describe-security-groups \
+  --filters "Name=tag:Name,Values=sg-master" \
+  --query 'SecurityGroups[0].GroupId' --output text)
+SG_LAMBDA=$(aws ec2 describe-security-groups \
+  --filters "Name=tag:Name,Values=sg-lambda" \
+  --query 'SecurityGroups[0].GroupId' --output text)
 
 aws ec2 authorize-security-group-ingress \
-  --group-id $MASTER_SG \
-  --protocol tcp \
-  --port 30090 \
-  --source-group $LAMBDA_SG \
-  --region ap-southeast-1
+  --group-id $SG_MASTER \
+  --protocol tcp --port 30090 \
+  --source-group $SG_LAMBDA
 ```
 
 ---
 
-### Issue 4: Lambda Cannot Execute kubectl Commands
+### 2. Workers Not Joining Cluster
 
-**Symptoms**:
+**Symptom**: New EC2 instances launch (visible in AWS Console) but never appear in `kubectl get nodes`. Worker SSM logs show `Failed to find supervisor.conf` or `Error: token mismatch`.
 
-- Error: "kubectl: command not found"
-- Scale-down operations fail during drain
+**Cause**: K3s join token not in Secrets Manager (or wrong secret path) when worker first boots. Userdata only runs once — a failed token fetch means the worker never joins.
 
-**Diagnosis**:
-
+**Fix**:
 ```bash
-# Check if kubectl is bundled in Lambda package
-unzip -l lambda/autoscaler.zip | grep kubectl
+# Check token in Secrets Manager
+aws secretsmanager get-secret-value \
+  --secret-id node-fleet/k3s-token \
+  --query SecretString --output text
 
-# Check Lambda execution role has SSH/SSM permissions
-aws iam get-role-policy \
-  --role-name node-fleet-lambda-autoscaler-role \
-  --policy-name lambda-policy \
-  --region ap-southeast-1
-```
+# Verify it matches master token
+ssh -i node-fleet-key.pem ubuntu@$MASTER_IP \
+  "sudo cat /var/lib/rancher/k3s/server/node-token"
 
-**Solutions**:
+# If mismatch: update secret
+TOKEN=$(ssh -i node-fleet-key.pem ubuntu@$MASTER_IP \
+  "sudo cat /var/lib/rancher/k3s/server/node-token")
+aws secretsmanager put-secret-value \
+  --secret-id node-fleet/k3s-token \
+  --secret-string "$TOKEN"
 
-The Lambda function uses SSH to master node for kubectl commands. Ensure:
-
-```bash
-# 1. SSH key is accessible (use Secrets Manager or SSM Parameter Store)
-# 2. Lambda has network connectivity to master's private IP
-# 3. Master security group allows SSH (22/tcp) from Lambda SG
-
-# Alternative: Use Kubernetes Python client instead of kubectl
-pip install kubernetes
-# Update lambda code to use kubernetes.client instead of subprocess kubectl
+# Terminate broken workers and let Lambda relaunch them
 ```
 
 ---
 
-## K3s Cluster Issues
+### 3. DynamoDB Lock Stuck
 
-### Issue 1: Worker Nodes Not Joining Cluster
+**Symptom**: Lambda logs show `ConditionalCheckFailedException` on every invocation, scaling never happens. Or: Lambda crashed mid-run and left `scaling_in_progress=true`.
 
-**Symptoms**:
+**Cause**: Lambda crashed (timeout, exception) leaving the lock without releasing it. Lock expiry is 360s, so it auto-clears eventually — but if you need immediate fix:
 
-- EC2 instances running but `kubectl get nodes` shows only master
-- Worker count stays below MIN_NODES
-
-**Diagnosis**:
-
+**Fix**:
 ```bash
-# Get worker instance IDs
+# Check lock state
+aws dynamodb get-item \
+  --table-name k3s-autoscaler-state \
+  --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
+  --projection-expression 'scaling_in_progress, lock_acquired_at, lock_expiry' \
+  --region ap-southeast-1
+
+# Manual release (only if you're sure no Lambda is currently scaling)
+aws dynamodb update-item \
+  --table-name k3s-autoscaler-state \
+  --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
+  --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry' \
+  --region ap-southeast-1
+
+echo "Lock released"
+```
+
+---
+
+### 4. Lambda Timeout During Scaling
+
+**Symptom**: CloudWatch shows Lambda invocation with `Task timed out after 60.00 seconds`. Instances may be launching but lock is held.
+
+**Cause**: Lambda hit the 60-second timeout. Common causes: Prometheus response slow, EC2 RunInstances slow, or node polling loop running too long.
+
+**Fix**:
+```bash
+# 1. Immediately disable EventBridge to stop repeated invocations
+aws events disable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+
+# 2. Check if instances are still launching
 aws ec2 describe-instances \
-  --filters "Name=tag:Role,Values=k3s-worker" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[].Instances[].[InstanceId,PrivateIpAddress,State.Name]' \
-  --output table \
+  --filters "Name=tag:Project,Values=node-fleet" "Name=instance-state-name,Values=pending,running" \
+  --query 'Reservations[*].Instances[*].[InstanceId,State.Name,LaunchTime]' \
+  --output table
+
+# 3. Check if Prometheus is responding
+curl -u prometheus:<password> http://$MASTER_IP:30090/-/healthy
+
+# 4. Release stale lock (lock auto-clears at 360s, but manual if urgent)
+aws dynamodb update-item \
+  --table-name k3s-autoscaler-state \
+  --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
+  --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
 
-# SSH to worker and check logs
-ssh -i ~/.ssh/node-fleet-key.pem ubuntu@<worker-private-ip>
-sudo journalctl -u k3s-agent -n 100 --no-pager
-```
-
-**Common Error Messages**:
-
-**Error 1**: `"Unable to connect to server: dial tcp 10.0.11.x:6443: i/o timeout"`
-
-```bash
-# Solution: Fix security group (allow 6443/tcp from workers to master)
-WORKER_SG=$(aws ec2 describe-instances \
-  --filters "Name=tag:Role,Values=k3s-worker" \
-  --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' \
-  --output text \
-  --region ap-southeast-1)
-
-aws ec2 authorize-security-group-ingress \
-  --group-id $MASTER_SG \
-  --protocol tcp \
-  --port 6443 \
-  --source-group $WORKER_SG \
-  --region ap-southeast-1
-```
-
-**Error 2**: `"Node password rejected, contents of '/var/lib/rancher/k3s/agent/node-password' may not match server"`
-
-```bash
-# Solution: K3s token mismatch - update Secrets Manager
-# On master node:
-K3S_TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
-
-# On local machine:
-aws secretsmanager update-secret \
-  --secret-id node-fleet/k3s-token \
-  --secret-string "$K3S_TOKEN" \
-  --region ap-southeast-1
-
-# On worker node (re-install K3s):
-sudo systemctl stop k3s-agent
-sudo rm -rf /var/lib/rancher/k3s/agent
-curl -sfL https://get.k3s.io | K3S_URL=https://<master-private-ip>:6443 K3S_TOKEN=$K3S_TOKEN sh -
-```
-
-**Error 3**: `"Failed to find master IP"`
-
-```bash
-# Solution: EC2 tag missing or UserData script failed
-# Manually join worker:
-MASTER_PRIVATE_IP=$(aws ec2 describe-instances \
-  --filters "Name=tag:Role,Values=k3s-master" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-  --output text \
-  --region ap-southeast-1)
-
-K3S_TOKEN=$(aws secretsmanager get-secret-value \
-  --secret-id node-fleet/k3s-token \
-  --query SecretString \
-  --output text \
-  --region ap-southeast-1)
-
-curl -sfL https://get.k3s.io | K3S_URL=https://$MASTER_PRIVATE_IP:6443 K3S_TOKEN=$K3S_TOKEN sh -
+# 5. Fix the root cause, then re-enable
+aws events enable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
 ```
 
 ---
 
-### Issue 2: Master Node Not Ready
+### 5. Windows Build Fails on Lambda
 
-**Symptoms**:
+**Symptom**: Lambda invocation fails with `Unable to import module 'autoscaler': No module named '_cffi_backend'` or `cannot import name 'AES'`.
 
-- `kubectl get nodes` shows master in NotReady state
-- All kubectl commands fail
+**Cause**: `pip install` on Windows builds native C extensions (`.pyd` files) compiled for Windows. Lambda runs on Linux — these crash.
 
-**Diagnosis**:
-
+**Fix**:
 ```bash
-# SSH to master
-ssh -i ~/.ssh/node-fleet-key.pem ubuntu@$(cat master-ip.txt)
+cd lambda
 
-# Check K3s service status
-sudo systemctl status k3s
+# Remove bad builds
+rm -rf *.pyd *.egg-info
 
-# Check K3s logs
-sudo journalctl -u k3s -n 200 --no-pager
+# Install with Linux-compatible wheels
+pip install \
+  --platform manylinux2014_x86_64 \
+  --only-binary=:all: \
+  --target=. \
+  cryptography paramiko
 
-# Check node conditions
-sudo kubectl describe node $(hostname)
-```
+pip install -r requirements.txt --target=. \
+  --ignore-installed cryptography paramiko
 
-**Solutions**:
-
-```bash
-# If K3s service crashed, restart it
-sudo systemctl restart k3s
-sudo systemctl enable k3s
-
-# If CNI plugin issues (Flannel)
-sudo kubectl delete pods -n kube-system -l app=flannel
-# Wait for pods to recreate
-
-# If etcd corruption (rare)
-sudo k3s server --cluster-reset
-# WARNING: This deletes all cluster data
+zip -r function.zip . --exclude "*.pyc" "__pycache__/*" "venv/*" "tests/*"
+aws lambda update-function-code \
+  --function-name node-fleet-cluster-autoscaler \
+  --zip-file fileb://function.zip
 ```
 
 ---
 
-## Prometheus & Monitoring Issues
+### 6. Prometheus Shows 0 Metrics (No Data)
 
-### Issue 1: Prometheus Pod CrashLoopBackOff
+**Symptom**: Grafana dashboards show "No data", Lambda logs show `cpu=None` from Prometheus.
 
-**Symptoms**:
+**Cause A**: `node-exporter` DaemonSet not deployed (not bundled in K3s).  
+**Cause B**: `kube-state-metrics` not running.  
+**Cause C**: Prometheus `static_configs` targets have wrong IP addresses.
 
-- `kubectl get pods -n monitoring` shows prometheus pod restarting
-- Autoscaler cannot collect metrics
-
-**Diagnosis**:
-
-```bash
-# Check pod status
-kubectl describe pod -n monitoring -l app=prometheus
-
-# Check pod logs
-kubectl logs -n monitoring -l app=prometheus --tail=100
-
-# Check persistent volume (if used)
-kubectl get pvc -n monitoring
-```
-
-**Solutions**:
-
-```bash
-# Common cause: Out of memory
-# Fix: Increase Prometheus memory limits
-kubectl patch deployment prometheus -n monitoring -p '{"spec":{"template":{"spec":{"containers":[{"name":"prometheus","resources":{"limits":{"memory":"2Gi"},"requests":{"memory":"1Gi"}}}]}}}}'
-
-# If PVC full, increase size or reduce retention
-kubectl patch deployment prometheus -n monitoring -p '{"spec":{"template":{"spec":{"containers":[{"name":"prometheus","args":["--storage.tsdb.retention.time=3d"]}]}}}}'
-
-# Delete and recreate if corrupted
-kubectl delete deployment prometheus -n monitoring
-kubectl apply -f k3s/prometheus-deployment.yaml
-```
-
----
-
-### Issue 2: Prometheus Metrics Missing
-
-**Symptoms**:
-
-- PromQL queries return empty results
-- Grafana dashboards show "No Data"
-
-**Diagnosis**:
-
+**Fix**:
 ```bash
 # Check Prometheus targets
-curl http://$(cat master-ip.txt):30090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health}'
+curl -u prometheus:<password> http://$MASTER_IP:30090/api/v1/targets | \
+  jq '.data.activeTargets[] | {job: .labels.job, health: .health, lastError: .lastError}'
 
-# Check specific metric exists
-curl "http://$(cat master-ip.txt):30090/api/v1/query?query=up" | jq '.data.result'
+# Deploy node-exporter if missing
+kubectl apply -f gitops/infrastructure/prometheus-deployment.yaml
 
-# Check node-exporter pods
-kubectl get pods -n kube-system -l app=node-exporter
-```
+# Check pods
+kubectl get pods -n monitoring
 
-**Solutions**:
+# Verify node-exporter running on workers
+kubectl get daemonset -n monitoring node-exporter
 
-```bash
-# If node-exporter not running, deploy it
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: node-exporter
-  namespace: kube-system
-spec:
-  selector:
-    matchLabels:
-      app: node-exporter
-  template:
-    metadata:
-      labels:
-        app: node-exporter
-    spec:
-      hostNetwork: true
-      hostPID: true
-      containers:
-      - name: node-exporter
-        image: prom/node-exporter:latest
-        ports:
-        - containerPort: 9100
-EOF
-
-# Update Prometheus ConfigMap to scrape node-exporter
-kubectl edit configmap prometheus-config -n monitoring
-# Add job for node-exporter on port 9100
-
-# Reload Prometheus config
-kubectl rollout restart deployment prometheus -n monitoring
+# If static_configs targets wrong, get current worker IPs
+kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+# Update prometheus.yml with correct IPs
 ```
 
 ---
 
-## Networking & Connectivity Issues
+### 7. Grafana Dashboards Blank
 
-### Issue 1: NAT Gateway Charges Too High
+**Symptom**: Grafana loads but all panels show "No data source found" or blank.
 
-**Symptoms**:
+**Cause**: Grafana datasources ConfigMap or dashboards ConfigMap not applied.
 
-- AWS bill shows high NAT Gateway data transfer costs
-- $50-100/month in NAT charges
-
-**Diagnosis**:
-
+**Fix**:
 ```bash
-# Check NAT Gateway metrics
-aws cloudwatch get-metric-statistics \
-  --namespace AWS/NATGateway \
-  --metric-name BytesOutToDestination \
-  --start-time $(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%S) \
-  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
-  --period 86400 \
-  --statistics Sum \
-  --region ap-southeast-1
-```
+# Redeploy monitoring stack (creates all ConfigMaps)
+bash scripts/deploy_monitoring.sh
 
-**Solutions**:
+# Verify ConfigMaps exist
+kubectl get configmap -n monitoring
 
-```bash
-# Option 1: Use VPC Endpoints for AWS services (no NAT charges)
-# Create endpoints for DynamoDB, Secrets Manager, EC2
+# Check Grafana pod logs
+kubectl logs -n monitoring deployment/grafana
 
-aws ec2 create-vpc-endpoint \
-  --vpc-id $(cat vpc-id.txt) \
-  --service-name com.amazonaws.ap-southeast-1.dynamodb \
-  --route-table-ids <private-route-table-ids> \
-  --region ap-southeast-1
+# Restart Grafana to pick up new ConfigMaps
+kubectl rollout restart deployment/grafana -n monitoring
+kubectl rollout status deployment/grafana -n monitoring
 
-# Option 2: Deploy single NAT Gateway (instead of 2 AZs)
-# Trade-off: Less resilient but saves $45/month
-
-# Option 3: Use EC2 as NAT instance (t3.nano = $3/month vs $32/month NAT Gateway)
-# See AWS documentation for NAT instance setup
+# Verify datasource
+curl -u admin:<password> http://$MASTER_IP:30030/api/datasources | jq '.[].name'
 ```
 
 ---
 
-## DynamoDB & State Management Issues
+### 8. Scale-Down Not Happening (Expected But Not Triggered)
 
-### Issue 1: DynamoDB Lock Stuck
+**Symptom**: CPU and memory have been low for >15 minutes but no scale-down event.
 
-**Symptoms**:
+**Cause A**: Cooldown period still active (600s after last scale-down).  
+**Cause B**: Window not complete (need 5 consecutive low readings = 10 minutes).  
+**Cause C**: One condition not met (e.g., memory briefly spiked above 50%).
 
-- Lambda logs: "Scaling already in progress" for 10+ minutes
-- No actual scaling happening
-
-**Diagnosis**:
-
+**Diagnose**:
 ```bash
-# Check lock status
+# Check last scale time
 aws dynamodb get-item \
-  --table-name node-fleet-dev-state \
-  --key '{"cluster_id": {"S": "node-fleet-cluster"}}' \
-  --region ap-southeast-1 | jq '.Item.scaling_in_progress, .Item.lock_acquired_at'
-```
-
-**Solutions**:
-
-```bash
-# Check if lock is truly stuck (> 5 minutes old)
-LOCK_TIME=$(aws dynamodb get-item \
-  --table-name node-fleet-dev-state \
-  --key '{"cluster_id": {"S": "node-fleet-cluster"}}' \
-  --query 'Item.lock_acquired_at.S' \
-  --output text \
-  --region ap-southeast-1)
-
-echo "Lock acquired at: $LOCK_TIME"
-echo "Current time: $(date -u +%Y-%m-%dT%H:%M:%S)"
-
-# If stuck > 10 minutes, force release (EMERGENCY ONLY)
-aws dynamodb update-item \
-  --table-name node-fleet-dev-state \
-  --key '{"cluster_id": {"S": "node-fleet-cluster"}}' \
-  --update-expression "SET scaling_in_progress = :false REMOVE lock_acquired_at" \
-  --expression-attribute-values '{":false": {"BOOL": false}}' \
+  --table-name k3s-autoscaler-state \
+  --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
+  --query 'Item.{last_scale_time:last_scale_time,last_scale_action:last_scale_action}' \
   --region ap-southeast-1
 
-# Investigate root cause:
-# - Check if Lambda crashed mid-execution (CloudWatch logs)
-# - Check if EC2 API calls timed out
-# - Verify finally block in Lambda releases lock
-```
-
----
-
-## EC2 Instance Issues
-
-### Issue 1: Spot Instance Interrupted Without Replacement
-
-**Symptoms**:
-
-- Worker count drops below MIN_NODES
-- No new instances launched
-
-**Diagnosis**:
-
-```bash
-# Check Spot interruption notices
-aws ec2 describe-spot-instance-requests \
-  --filters "Name=state,Values=closed" \
-  --region ap-southeast-1 | jq '.SpotInstanceRequests[] | {InstanceId: .InstanceId, Status: .Status}'
-
-# Check autoscaler logs for launch failures
+# Check recent Lambda decisions in CloudWatch
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/node-fleet-dev-autoscaler \
-  --filter-pattern "RunInstances" \
-  --region ap-southeast-1 | jq '.events[].message'
-```
-
-**Solutions**:
-
-```bash
-# If Spot capacity unavailable, autoscaler should fallback to On-Demand
-# Check Lambda code has fallback logic:
-# grep -A 10 "SpotInstanceType" lambda/ec2_manager.py
-
-# Manually launch On-Demand replacement
-aws ec2 run-instances \
-  --launch-template LaunchTemplateId=$(pulumi stack output workerLaunchTemplateId) \
-  --subnet-id $(pulumi stack output privateSubnet1aId) \
-  --instance-market-options '{}' \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Project,Value=node-fleet},{Key=Role,Value=k3s-worker}]' \
-  --region ap-southeast-1
+  --log-group-name /aws/lambda/node-fleet-cluster-autoscaler \
+  --filter-pattern '"scale_down" OR "cooldown" OR "insufficient"' \
+  --start-time $(date -d '30 minutes ago' +%s000)
 ```
 
 ---
 
-## Emergency Procedures
+### 9. Spot Interruption Causes Brief Downtime
 
-### Emergency 1: Complete Cluster Outage
+**Symptom**: A worker terminates unexpectedly, pods restart on other nodes, brief latency spike.
 
-**Scenario**: All worker nodes down, master unreachable
+**Cause**: Spot interruption 2-minute warning window is too short if drain takes longer than 90s.
 
-**Recovery Steps**:
-
+**Fix**:
 ```bash
-# Step 1: Check master instance state
-aws ec2 describe-instance-status \
-  --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Role,Values=k3s-master" --query 'Reservations[0].Instances[0].InstanceId' --output text --region ap-southeast-1) \
-  --region ap-southeast-1
+# Check spot interruption logs
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/node-fleet-cluster-autoscaler \
+  --filter-pattern '"spot_interruption"'
 
-# Step 2: If master stopped, start it
-aws ec2 start-instances --instance-ids <master-instance-id> --region ap-southeast-1
+# Verify EventBridge rule for spot interruptions exists
+aws events list-rules --name-prefix spot-interruption --region ap-southeast-1
 
-# Step 3: Wait for master to be ready (5-10 min)
-watch -n 10 "aws ec2 describe-instance-status --instance-ids <master-instance-id> --region ap-southeast-1 | jq '.InstanceStatuses[0].InstanceState.Name'"
+# Reduce demo app terminationGracePeriodSeconds if >90s
+kubectl patch deployment demo-app -p '{"spec":{"template":{"spec":{"terminationGracePeriodSeconds":60}}}}'
 
-# Step 4: Force launch MIN_NODES workers
-for i in {1..2}; do
-  aws ec2 run-instances \
-    --launch-template LaunchTemplateId=$(pulumi stack output workerLaunchTemplateId) \
-    --subnet-id $(pulumi stack output privateSubnet1aId) \
-    --region ap-southeast-1
-done
-
-# Step 5: Verify cluster recovery
-sleep 300  # Wait 5 min for nodes to join
-kubectl get nodes
-```
-
----
-
-### Emergency 2: Autoscaler Stuck Scaling Up (At Max Capacity)
-
-**Scenario**: Cluster at 10 nodes, still receiving scale-up triggers
-
-**Recovery Steps**:
-
-```bash
-# Step 1: Identify root cause
-kubectl top nodes  # Check if CPU truly high
-kubectl get pods --all-namespaces | grep Pending  # Check pending pods
-
-# Step 2: Manually scale problematic deployments
-kubectl scale deployment <app-name> --replicas=5  # Reduce if too many replicas
-
-# Step 3: Increase MAX_NODES temporarily (if justified)
+# Add more On-Demand workers temporarily
+# Adjust SPOT_PERCENTAGE env var in Lambda config
 aws lambda update-function-configuration \
-  --function-name node-fleet-dev-autoscaler \
-  --environment Variables={MAX_NODES=15,...} \
-  --region ap-southeast-1
-
-# Step 4: Investigate inefficient pods (high CPU/memory but low work)
-kubectl describe pod <high-cpu-pod>
-# Consider adding resource limits or optimizing application
+  --function-name node-fleet-cluster-autoscaler \
+  --environment "Variables={SPOT_PERCENTAGE=50,...}"
 ```
 
 ---
 
-### Emergency 3: Production Incident - Disable Autoscaler
+### 10. Drain Timeout / Node Not Terminating
 
-**Scenario**: Autoscaler causing issues, need to stop all automation
+**Symptom**: A node is stuck in `SchedulingDisabled` (cordoned) but never terminated. Lambda logs show `Drain timed out after 300s`.
 
-**Recovery Steps**:
+**Cause**: A pod with a long `terminationGracePeriodSeconds` is preventing drain from completing.
 
+**Fix**:
 ```bash
-# Step 1: Disable EventBridge rule (stops Lambda triggers)
-aws events disable-rule --name node-fleet-dev-autoscaler-schedule --region ap-southeast-1
+# Find the node
+kubectl get nodes
 
-# Step 2: Release any stuck DynamoDB locks
+# See what pods are blocking drain
+kubectl get pods --all-namespaces \
+  --field-selector spec.nodeName=<node-name> | grep -v DaemonSet
+
+# If safe to force: force-terminate the blocking pod
+kubectl delete pod <pod-name> -n <namespace> --grace-period=0 --force
+
+# Un-cordon the node if aborting drain
+kubectl uncordon <node-name>
+
+# Clean up DynamoDB drain state if needed
 aws dynamodb update-item \
-  --table-name node-fleet-dev-state \
-  --key '{"cluster_id": {"S": "node-fleet-cluster"}}' \
-  --update-expression "SET scaling_in_progress = :false REMOVE lock_acquired_at" \
-  --expression-attribute-values '{":false": {"BOOL": false}}' \
+  --table-name k3s-autoscaler-state \
+  --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
+  --update-expression 'SET draining_instances = :empty' \
+  --expression-attribute-values '{":empty":{"L":[]}}' \
   --region ap-southeast-1
-
-# Step 3: Manually manage cluster
-# Use AWS Console or CLI to launch/terminate instances as needed
-
-# Step 4: Re-enable when safe
-aws events enable-rule --name node-fleet-dev-autoscaler-schedule --region ap-southeast-1
 ```
 
 ---
 
-## Contact & Support
+### 11. EC2 Quota Exceeded
 
-For urgent production issues:
+**Symptom**: Lambda logs show `ClientError: An error occurred (InstanceLimitExceeded)`. No new nodes launch.
 
-- **GitHub Issues**: https://github.com/BayajidAlam/node-fleet/issues
-- **Email**: bayajidalam2001@gmail.com
+**Fix**:
+```bash
+# Check current instance count
+aws ec2 describe-instances \
+  --filters "Name=instance-state-name,Values=running" \
+  --query 'length(Reservations[*].Instances[])'
 
-For detailed architecture and deployment guides:
+# Request quota increase (takes hours)
+aws service-quotas request-service-quota-increase \
+  --service-code ec2 \
+  --quota-code L-1216C47A \
+  --desired-value 20
 
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
-- [SCALING_ALGORITHM.md](SCALING_ALGORITHM.md)
+# Immediate workaround: scale down unused instances
+# Or: switch to different instance type with available capacity
+```
+
+---
+
+## Common Log Patterns
+
+| Log Message | Meaning | Action |
+|-------------|---------|--------|
+| `"Lock acquired"` | Successful lock | Normal |
+| `"ConditionalCheckFailedException"` | Lock held by concurrent Lambda | Normal (usually) or stuck lock |
+| `"Decision: none, reason: cooldown"` | Within cooldown window | Normal |
+| `"Decision: none, reason: stable"` | All metrics below thresholds | Normal |
+| `"Skipping node: StatefulSet pod"` | Critical pod protection working | Normal |
+| `"Drain validated"` | Drain success, will terminate | Normal |
+| `"drained keyword missing"` | Drain output invalid | Check SSM command logs |
+| `"Prometheus unreachable"` | Can't fetch metrics | Check VPC/SG, Prometheus pod |
+| `"Task timed out"` | Lambda >60s | Disable EventBridge, investigate |
+| `"InstanceLimitExceeded"` | EC2 quota hit | Request increase |

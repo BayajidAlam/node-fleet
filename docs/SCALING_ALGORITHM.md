@@ -1,804 +1,356 @@
-# node-fleet Scaling Algorithm
+# node-fleet — Scaling Algorithm
 
-> **Critical: Node Count Semantics**
->
-> - **Master Node**: Fixed, never scales (1 master always running)
-> - **Worker Nodes**: Scalable pool managed by autoscaler (min 2, max 10)
-> - **Total Cluster**: 1 master + 2-10 workers = **3-11 nodes total**
-> - **All "current_nodes", "min_nodes", "max_nodes" in this algorithm refer to WORKER nodes ONLY**
-> - **Initial State**: Pulumi launches 1 master + 2 workers in different AZs (3 nodes total)
-
-## Table of Contents
-
-1. [Algorithm Overview](#algorithm-overview)
-2. [Decision Logic Flowchart](#decision-logic-flowchart)
-3. [Metric Collection](#metric-collection)
-4. [Scale-Up Logic](#scale-up-logic)
-5. [Scale-Down Logic](#scale-down-logic)
-6. [Safety Mechanisms](#safety-mechanisms)
-7. [Pseudocode Implementation](#pseudocode-implementation)
+> Workers only: master never scales. `MIN_NODES=2`, `MAX_NODES=10` refer to workers.
 
 ---
 
-## Algorithm Overview
+## 1. Algorithm Overview
 
-The node-fleet autoscaler uses a **hybrid three-layer decision engine** that evaluates cluster health every 2 minutes using reactive metrics, predictive analysis, and custom application metrics.
+node-fleet uses a **hybrid three-layer decision engine** that runs every 2 minutes.
 
-### Core Principles
+![Scaling Decision Algorithm](diagrams/scaling-logic-flowchart.png)
 
-1. **Hybrid Intelligence**: Reactive + Predictive + Custom metrics for comprehensive scaling decisions
-2. **Sustained Load Detection**: 2-reading window prevents false positives from transient spikes
-3. **Safety First**: Multiple safeguards prevent service disruptions
-4. **Cost-Aware**: Automated cost optimization with weekly recommendations
-5. **Predictable**: Deterministic logic with clear thresholds and proactive pre-scaling
+| Layer | Type | Trigger |
+|-------|------|---------|
+| 1. Reactive | Threshold-based | CPU, memory, pending pods exceed sustained thresholds |
+| 2. Custom App | Application signals | Queue depth, API latency, error rate |
+| 3. Predictive | Historical patterns | 7-day CPU history detects upcoming spikes |
 
-### Decision Layers
+**Scale-up logic**: OR — any condition triggers a scale-up.  
+**Scale-down logic**: AND — all conditions must hold simultaneously.
 
-**Layer 1: Reactive Scaling** (Traditional)
-
-- Monitors CPU, memory, pending pods every 2 minutes
-- **Sustained threshold checking**: Requires 2 consecutive readings above threshold (prevents oscillation)
-- Cooldown periods prevent scaling thrash
-
-**Layer 2: Predictive Scaling** (Advanced)
-
-- Analyzes 7-day historical CPU patterns
-- Hour-of-day trend detection
-- Proactive scale-up 10 minutes before predicted spikes (at minute 50 of each hour)
-
-**Layer 3: Custom Application Metrics** (Production-Grade)
-
-- Application queue depth monitoring (in-app task queues)
-- API latency tracking (p95, p99)
-- Request rate thresholds
-- Business-specific triggers
-
-### Key Parameters
-
-| Parameter                   | Value      | Rationale                               |
-| --------------------------- | ---------- | --------------------------------------- |
-| **Evaluation Interval**     | 2 minutes  | Balance responsiveness vs cost          |
-| **Sustained Load Window**   | 2 readings | Prevents false positives (4-min window) |
-| **Min Nodes**               | 2          | High availability requirement           |
-| **Max Nodes**               | 10         | AWS quota + cost limit                  |
-| **CPU Threshold (Up)**      | 70%        | Leave 30% headroom for spikes           |
-| **CPU Threshold (Down)**    | 30%        | Prevent oscillation                     |
-| **Memory Threshold (Up)**   | 75%        | Critical for OOM prevention             |
-| **Memory Threshold (Down)** | 50%        | Conservative, gradual scale-down        |
-| **Scale-Up Cooldown**       | 5 minutes  | Allow new nodes to stabilize            |
-| **Scale-Down Cooldown**     | 10 minutes | Longer to prevent thrashing             |
-| **Scale-Up Increment**      | 1-2 nodes  | Based on urgency (pending pods)         |
-| **Scale-Down Increment**    | 1 node     | Gradual, safe removal                   |
+This asymmetry is intentional: it's safer to add a node too early than to remove one too aggressively.
 
 ---
 
-## Decision Logic Flowchart
+## 2. Parameters Reference
 
-![Scaling Decision Logic](diagrams/scaling_logic_flowchart.png)
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Evaluation interval | 2 min | Balance: frequent enough for fast response; infrequent enough to avoid thrashing |
+| Scale-up CPU threshold | 70% | Leaves 30% headroom; 70% sustained = genuinely overloaded |
+| Scale-down CPU threshold | 30% | Large gap (30% vs 70%) prevents oscillation |
+| Scale-up memory threshold | 75% | Near OOM threshold on t3.small (2GB) |
+| Scale-down memory threshold | 50% | Conservative — memory spikes can be sudden |
+| Scale-up window | 3 readings (~6 min) | Prevents scaling on transient spikes |
+| Scale-down window | 5 readings (~10 min) | Longer window = more conservative = safer |
+| Pending pods window | 2 readings (~4 min) | Pending pods = direct demand signal; shorter window acceptable |
+| Scale-up cooldown | 300s (5 min) | Allow new nodes to join and absorb load before next decision |
+| Scale-down cooldown | 600s (10 min) | Longer — prevents removing a node just added |
+| Scale-up increment | +1 (normal) or +2 (urgent) | Urgency: CPU>85% or pending_pods>5 |
+| Scale-down increment | -1 | Always conservative — one node at a time |
+| Drain timeout | 300s | Covers slow graceful shutdown (terminationGracePeriodSeconds=300) |
+| Lock expiry | 360s | 300s drain + 60s buffer for node join overhead |
+| Queue depth scale-up | >1000 tasks | Application-specific: overwhelmed task queue |
+| Latency p95 scale-up | >2000ms | Response time degradation is user-visible |
+| Error rate scale-up | >5% (2+ min) | Server-side errors signal capacity problem |
+| Queue depth scale-down guard **[BONUS]** | <100 tasks (10+ min) | Don't remove capacity while queue still draining |
 
 ---
 
-## Metric Collection
+## 3. Metric Collection
 
-### Prometheus Queries
+Lambda queries Prometheus via HTTP on every invocation (Step 3).
 
-**1. CPU Utilization (Cluster Average)**
-
-```promql
-avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100
-```
-
-- **Returns**: Percentage (0-100)
-- **Logic**: Average CPU across all nodes, 5-minute rate
-- **Threshold**: >70% triggers scale-up
-
-**2. Memory Utilization (Cluster Average)**
-
-```promql
-(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
-```
-
-- **Returns**: Percentage (0-100)
-- **Logic**: (1 - Available/Total) across all nodes
-- **Threshold**: >75% triggers scale-up
-
-**3. Pending Pods**
-
-```promql
-sum(kube_pod_status_phase{phase="Pending"})
-```
-
-- **Returns**: Integer count
-- **Logic**: Total pods in Pending state (unschedulable)
-- **Threshold**: >0 triggers scale-up (urgent)
-
-**4. Current Node Count**
-
-```promql
-count(kube_node_info{node=~".*worker.*"})
-```
-
-- **Returns**: Integer count
-- **Logic**: Count of worker nodes (excludes master)
-- **Used For**: Decision calculation, min/max enforcement
-
-### Error Handling
+![Data Flow — Metrics to Decision](diagrams/data-flow.png)
 
 ```python
-def collect_metrics():
-    try:
-        response = requests.get(
-            f"{PROMETHEUS_URL}/api/v1/query",
-            params={"query": promql_query},
+class MetricsCollector:
+    def collect(self) -> Dict:
+        return {
+            'cpu':      self._query('avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100'),
+            'memory':   self._query('(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100'),
+            'pending':  self._query('sum(kube_pod_status_phase{phase="Pending"})'),
+            'nodes':    self._query('count(kube_node_info)'),
+            'net_rx':   self._query('sum(rate(node_network_receive_bytes_total{device!~"lo|veth.*"}[5m])) / 1048576'),
+            'disk_r':   self._query('sum(rate(node_disk_read_bytes_total[5m])) / 1048576'),
+        }
+    
+    def _query(self, promql: str) -> Optional[float]:
+        resp = requests.get(
+            f"{self.url}/api/v1/query",
+            params={'query': promql},
+            auth=(self.username, self.password),
             timeout=10
         )
-        response.raise_for_status()
-        data = response.json()
-        return float(data['data']['result'][0]['value'][1])
-    except (RequestException, KeyError, IndexError, ValueError) as e:
-        logger.error(f"Prometheus query failed: {e}")
-        # Fallback to cached metrics from DynamoDB
-        return get_cached_metric_from_dynamodb()
+        resp.raise_for_status()
+        result = resp.json()['data']['result']
+        return float(result[0]['value'][1]) if result else None
+```
+
+**Why `mode!="idle"`?** Captures system + user + iowait + irq — all active CPU modes. `idle` represents unused CPU and must be excluded.
+
+**Why 5-minute rate window?** Smooths out sub-minute CPU spikes (e.g., garbage collection). Lambda polls every 2 minutes, so a 5-minute rate window overlaps between readings — this is intentional, providing temporal smoothing.
+
+**Why `MemAvailable` not `MemFree`?** `MemAvailable` includes reclaimable page cache and buffer memory. `MemFree` is misleadingly low because Linux aggressively uses spare RAM for caching.
+
+---
+
+## 4. Decision Logic — Full Pseudocode
+
+```python
+def evaluate(metrics: Dict, history: List[Dict], custom_metrics: Dict) -> Tuple[str, str, int]:
+    """
+    Returns: (action, reason, increment)
+    action: "scale_up" | "scale_down" | "none"
+    """
+    
+    # ── SAFETY LAYER ─────────────────────────────────────────────────────────
+    current_nodes = state_manager.get_node_count()
+    
+    if state_manager.is_locked():
+        return "none", "locked", 0
+    
+    last_scale = state_manager.get_last_scale_time()
+    last_action = state_manager.get_last_scale_action()
+    
+    if last_action == "scale_up" and (now - last_scale) < COOLDOWN_SCALE_UP:
+        return "none", f"cooldown: {now - last_scale}s < {COOLDOWN_SCALE_UP}s", 0
+    
+    if last_action == "scale_down" and (now - last_scale) < COOLDOWN_SCALE_DOWN:
+        return "none", f"cooldown: {now - last_scale}s < {COOLDOWN_SCALE_DOWN}s", 0
+    
+    # ── LAYER 1: REACTIVE SCALE-UP (OR logic) ────────────────────────────────
+    
+    # CPU: 3 consecutive readings above threshold
+    cpu_history = [h['cpu'] for h in history[-3:]] + [metrics['cpu']]
+    if len(cpu_history) >= 3 and all(c > SCALE_UP_THRESHOLD_CPU for c in cpu_history[-3:]):
+        urgency = metrics['cpu'] > 85
+        increment = 2 if urgency else 1
+        if current_nodes + increment <= MAX_NODES:
+            return "scale_up", f"CPU {metrics['cpu']:.1f}% [3/3 windows]", increment
+    
+    # Memory: 3 consecutive readings above threshold
+    mem_history = [h['memory'] for h in history[-3:]] + [metrics['memory']]
+    if len(mem_history) >= 3 and all(m > SCALE_UP_THRESHOLD_MEMORY for m in mem_history[-3:]):
+        if current_nodes + 1 <= MAX_NODES:
+            return "scale_up", f"Memory {metrics['memory']:.1f}% [3/3 windows]", 1
+    
+    # Pending pods: 2 consecutive non-zero readings
+    pending_history = [h['pending'] for h in history[-2:]] + [metrics['pending']]
+    if len(pending_history) >= 2 and all(p > 0 for p in pending_history[-2:]):
+        urgency = metrics['pending'] > 5
+        increment = 2 if urgency else 1
+        if current_nodes + increment <= MAX_NODES:
+            return "scale_up", f"pending_pods={metrics['pending']} [2/2 windows]", increment
+    
+    # ── LAYER 2: CUSTOM APP METRICS (OR logic) ───────────────────────────────
+    if custom_metrics:
+        if custom_metrics.get('queue_depth', 0) > QUEUE_DEPTH_THRESHOLD:   # 1000
+            return "scale_up", f"queue={custom_metrics['queue_depth']}", 1
+        
+        if custom_metrics.get('latency_p95_ms', 0) > LATENCY_P95_THRESHOLD:  # 2000ms
+            return "scale_up", f"latency_p95={custom_metrics['latency_p95_ms']:.0f}ms", 1
+        
+        if custom_metrics.get('error_rate', 0) > ERROR_RATE_THRESHOLD:  # 5.0%
+            return "scale_up", f"error_rate={custom_metrics['error_rate']:.1f}%", 1
+    
+    # ── LAYER 3: PREDICTIVE (OR logic) ───────────────────────────────────────
+    if ENABLE_PREDICTIVE_SCALING and metrics_history_table:
+        prediction = predictive_engine.should_prescale(history_7d)
+        if prediction['should_scale']:
+            return "scale_up", f"predictive: {prediction['reason']}", 1
+    
+    # ── SCALE-DOWN (AND logic — ALL conditions required) ─────────────────────
+    if current_nodes > MIN_NODES:
+        last_5_cpu     = [h['cpu']     for h in history[-5:]] + [metrics['cpu']]
+        last_5_memory  = [h['memory']  for h in history[-5:]] + [metrics['memory']]
+        last_5_pending = [h['pending'] for h in history[-5:]] + [metrics['pending']]
+        
+        # [BONUS] queue depth guard: don't scale down if queue backlogged
+        queue_ok = True
+        if custom_metrics and ENABLE_QUEUE_SCALE_DOWN_GUARD:
+            queue_ok = custom_metrics.get('queue_depth', 0) < QUEUE_DEPTH_SCALE_DOWN   # <100
+        
+        if (len(last_5_cpu) >= 5 and
+            all(c < SCALE_DOWN_THRESHOLD_CPU     for c in last_5_cpu[-5:])     and  # <30%
+            all(m < SCALE_DOWN_THRESHOLD_MEMORY  for m in last_5_memory[-5:])  and  # <50%
+            all(p == 0                           for p in last_5_pending[-5:])  and  # =0
+            queue_ok):                                                                # queue<100
+            
+            reason = f"CPU<{SCALE_DOWN_THRESHOLD_CPU}% [5/5], Memory<{SCALE_DOWN_THRESHOLD_MEMORY}% [5/5], pending=0 [5/5], queue<{QUEUE_DEPTH_SCALE_DOWN}"
+            return "scale_down", reason, -1
+    
+    return "none", "stable", 0
 ```
 
 ---
 
-## Scale-Up Logic
+## 5. Scale-Up Decision Examples
 
-**CloudWatch Alarm Configuration**:
+### Example 1: Normal Scale-Up (+1)
 
-![Scale Up Alarm](alarms/Scale%20Up.png)
-
-### Sustained Threshold Detection
-
-**Problem**: Transient CPU spikes (30s-1min) can cause unnecessary scaling. A single reading above threshold is not sufficient.
-
-**Solution**: Require **2 consecutive readings** above threshold (4-minute sustained load).
-
-```python
-def _is_sustained_above(self, metric_name, threshold, current_value):
-    """
-    Check if metric has been above threshold for 2+ consecutive readings
-
-    Returns: (is_sustained, duration_minutes)
-    """
-    if current_value <= threshold:
-        return False, 0
-
-    # Check metrics history from DynamoDB
-    history = self.state_manager.get_metrics_history(self.cluster_id)
-
-    if not history or len(history) < 1:
-        # First reading above threshold, store and wait
-        return False, 0
-
-    # Check previous reading (2 minutes ago)
-    prev_value = history[-1].get(metric_name, 0)
-
-    if prev_value > threshold:
-        # Both current and previous readings above threshold
-        # Sustained load detected (4-minute window)
-        return True, 4
-
-    return False, 0
+```
+Reading 1 (T=0):   CPU=72%, memory=65%, pending=0  → window: [72]
+Reading 2 (T+2m):  CPU=71%, memory=67%, pending=0  → window: [72, 71]
+Reading 3 (T+4m):  CPU=74%, memory=68%, pending=0  → window: [72, 71, 74] → ALL > 70% ✅
+Decision: scale_up +1, reason: "CPU 74.0% [3/3 windows]"
 ```
 
-### Trigger Conditions (OR Logic with Sustained Checks)
+### Example 2: Window Broken — No Action
 
-**Condition 1: Sustained High CPU**
+```
+Reading 1: CPU=75%  → window: [75]
+Reading 2: CPU=68%  → window: [75, 68] — window BROKEN (68% < 70%)
+Reading 3: CPU=76%  → window: [75, 68, 76] — still broken at position 2
+Reading 4: CPU=72%  → window: [68, 76, 72] — all > 70% from reading 2? No: 68 fails
+Reading 5: CPU=73%  → window: [76, 72, 73] — ALL > 70% ✅ → scale_up
+```
+The window requires 3 **consecutive** readings. One low reading resets the window.
 
-```python
-if cpu_utilization > 70:
-    is_sustained, duration = _is_sustained_above('cpu_percent', 70, cpu_utilization)
-    if is_sustained:
-        return ScaleDecision(
-            action="scale_up",
-            reason=f"CPU {cpu_utilization:.1f}% exceeded 70% for {duration} minutes (sustained)"
-        )
-    else:
-        # Transient spike, store metric and wait for next reading
-        state_manager.store_metrics_history(cluster_id, cpu_utilization, memory_utilization)
-        return ScaleDecision(action="none", reason="CPU spike detected, waiting for sustained load")
+### Example 3: Urgent Scale-Up (+2)
+
+```
+CPU=87%, pending=7 → scale_up +2 (CPU>85% OR pending>5 — either alone triggers urgency)
 ```
 
-**Condition 2: Pending Pods (Immediate - No Sustained Check)**
+### Example 4: Custom Metrics Override
 
-```python
-if pending_pods > 0:
-    # Urgent: workloads cannot be scheduled, bypass sustained check
-    nodes_to_add = 2 if pending_pods > 5 else 1
-    return ScaleDecision(
-        action="scale_up",
-        nodes=nodes_to_add,
-        reason=f"{pending_pods} pods pending (immediate scale, no sustained check)"
-    )
+```
+CPU=45%, memory=50%, pending=0 → reactive: no scale
+queue_depth=1200 → custom metrics: scale_up +1
+reason: "queue=1200 > threshold 1000"
 ```
 
-**Condition 3: Sustained High Memory**
+---
 
-```python
-if memory_utilization > 75:
-    is_sustained, duration = _is_sustained_above('memory_percent', 75, memory_utilization)
-    if is_sustained:
-        return ScaleDecision(
-            action="scale_up",
-            reason=f"Memory {memory_utilization:.1f}% exceeded 75% for {duration} minutes (sustained)"
-        )
-    else:
-        return ScaleDecision(action="none", reason="Memory spike detected, waiting for sustained load")
+## 6. Scale-Down Decision Examples
+
+### Example 1: Normal Scale-Down
+
+```
+Window (5 readings):
+  [CPU=25%, Mem=38%, pending=0]  × 5 consecutive readings
+  → ALL conditions satisfied → scale_down -1
 ```
 
-**Condition 4: Custom Application Metrics**
+### Example 2: One Condition Fails — No Action
 
-```python
-if custom_metrics_enabled:
-    scale_needed, reasons = custom_metrics.evaluate({
-        'queue_depth': 100,
-        'api_latency_p95': 500,  # ms
-        'request_rate': 1000      # req/s
-    })
-
-    if scale_needed:
-        return ScaleDecision(
-            action="scale_up",
-            reason=f"Custom metrics: {', '.join(reasons)}"
-        )
+```
+Window:
+  CPU=[22, 24, 28, 26, 21] → all < 30% ✅
+  Memory=[45, 47, 52, 49, 48] → reading 3: 52% > 50% ✗
+  → Scale-down BLOCKED (memory condition fails)
 ```
 
-**Condition 5: Predictive Scaling (Proactive)**
+### Example 3: Window Not Complete
 
-```python
-# Only runs at minute 50+ of each hour
-current_minute = datetime.utcnow().minute
-if current_minute >= 50:
-    should_scale, predicted_cpu = predictive_scaling.should_proactive_scale_up(
-        cluster_id, cpu_utilization
-    )
-
-    if should_scale:
-        return ScaleDecision(
-            action="scale_up",
-            nodes=1,
-            reason=f"Predictive: Next hour CPU predicted at {predicted_cpu:.1f}% (proactive scale)"
-        )
+```
+Only 4 readings available (Lambda just restarted or cooldown reset window)
+→ Insufficient history → no scale-down
 ```
 
-### Node Count Calculation
+---
+
+## 7. Predictive Scaling
+
+### How It Works
+
+1. **History storage**: Every Lambda invocation stores metrics in `k3s-metrics-history` DynamoDB table with timestamp
+2. **Pattern detection**: For the current hour-of-day and day-of-week, compute the rolling 7-day average CPU at `(current_hour + 10_minutes)`
+3. **Pre-scale trigger**: If predicted CPU at `now+10min` exceeds 70%, scale up now (10 minutes early)
+4. **Always active**: Runs on every invocation when `action == "none"` (reactive layer found no immediate trigger)
 
 ```python
-def calculate_scale_up_nodes(current_nodes, max_nodes, pending_pods):
-    # Urgent case: pending pods exist
-    if pending_pods > 5:
-        nodes_to_add = 2
-    elif pending_pods > 0:
-        nodes_to_add = 1
-    else:
-        # Normal case: high CPU/memory
-        nodes_to_add = 1
-
-    # Ensure we don't exceed max_nodes
-    target_nodes = min(current_nodes + nodes_to_add, max_nodes)
-    actual_nodes_to_add = target_nodes - current_nodes
-
-    return actual_nodes_to_add
-```
-
-### Multi-AZ Distribution
-
-```python
-def select_subnets_for_scale_up(nodes_to_add, current_distribution):
-    """
-    Maintain balanced distribution across AZs.
-
-    current_distribution = {
-        'ap-southeast-1a': 3,
-        'ap-southeast-1b': 2
-    }
-    nodes_to_add = 2
-
-    Returns: ['subnet-1b', 'subnet-1a'] (balance first)
-    """
-    subnets = []
-    az_counts = current_distribution.copy()
-
-    for _ in range(nodes_to_add):
-        # Pick AZ with fewest nodes
-        min_az = min(az_counts, key=az_counts.get)
-        subnets.append(SUBNET_MAP[min_az])
-        az_counts[min_az] += 1
-
-    return subnets
-```
-
-### Spot vs On-Demand Selection
-
-```python
-def determine_instance_market_options(spot_percentage=70):
-    """
-    70% Spot, 30% On-Demand distribution.
-    """
-    if random.randint(1, 100) <= spot_percentage:
+def should_prescale(history_7d: List[Dict]) -> Dict:
+    now = datetime.now(timezone.utc)
+    target_hour = now.hour
+    target_minute = (now.minute + 10) % 60
+    day_of_week = now.weekday()
+    
+    # Find historical readings at same time (±15 minutes) over last 7 days
+    same_time_readings = [
+        h['cpu'] for h in history_7d
+        if abs(parse_ts(h['timestamp']).hour - target_hour) == 0
+        and abs(parse_ts(h['timestamp']).minute - target_minute) <= 15
+    ]
+    
+    if len(same_time_readings) < 3:
+        return {'should_scale': False, 'reason': 'insufficient history'}
+    
+    avg_cpu_at_target = sum(same_time_readings) / len(same_time_readings)
+    
+    if avg_cpu_at_target > SCALE_UP_THRESHOLD_CPU:
         return {
-            'MarketType': 'spot',
-            'SpotOptions': {
-                'MaxPrice': '0.02',  # USD per hour (t3.small on-demand price)
-                'SpotInstanceType': 'one-time',
-                'InstanceInterruptionBehavior': 'terminate'
-            }
+            'should_scale': True,
+            'reason': f"7-day avg CPU at {target_hour}:{target_minute:02d} = {avg_cpu_at_target:.1f}% > 70%",
+            'confidence': len(same_time_readings)
         }
-    else:
-        return None  # On-Demand
+    
+    return {'should_scale': False, 'reason': f"predicted CPU {avg_cpu_at_target:.1f}% < 70%"}
 ```
+
+**Practical impact**: Pre-scales before the 9AM business-hours rush and before known Friday flash sales. Nodes are Ready before demand hits, preventing the 6-minute window tax (3 readings × 2 minutes) during the spike.
 
 ---
 
-## Scale-Down Logic
+## 8. Node Selection for Scale-Down
 
-**CloudWatch Alarm Configuration**:
-
-![Scale Down Alarm](alarms/Scale%20Down.png)
-
-### Trigger Conditions (AND Logic - ALL Must Be True)
+When scale-down is triggered, the following steps select which node to drain:
 
 ```python
-def should_scale_down(cpu, memory, pending_pods, current_nodes, min_nodes):
-    conditions = [
-        cpu < 30,                    # Low CPU
-        memory < 50,                 # Low memory
-        pending_pods == 0,           # No pending workloads
-        current_nodes > min_nodes    # Above minimum
-    ]
-
-    if all(conditions):
-        return True, f"CPU {cpu:.1f}% < 30%, Memory {memory:.1f}% < 50%, no pending pods"
-    return False, None
-```
-
-### Node Selection Strategy
-
-```python
-def select_node_to_remove(nodes, current_distribution):
-    """
-    Priority order:
-    1. Highest CPU idle
-    2. Fewest pods running
-    3. Maintain AZ balance (remove from AZ with most nodes)
-    4. Not running critical system pods (kube-system)
-    """
-
-    # Get node metrics
-    node_metrics = []
-    for node in nodes:
-        pods_count = get_pod_count_on_node(node)
-        cpu_idle = get_node_cpu_idle(node)
-        az = get_node_az(node)
-        has_critical_pods = has_system_pods(node, namespace='kube-system')
-
-        node_metrics.append({
-            'name': node,
-            'pods': pods_count,
-            'cpu_idle': cpu_idle,
-            'az': az,
-            'critical': has_critical_pods
-        })
-
-    # Filter out critical nodes
-    candidates = [n for n in node_metrics if not n['critical']]
-
-    # Sort by: AZ count (desc), CPU idle (desc), pods (asc)
-    az_counts = current_distribution
-    candidates.sort(key=lambda n: (
-        -az_counts[n['az']],  # Remove from AZ with most nodes
-        -n['cpu_idle'],       # Prefer highest idle CPU
-        n['pods']             # Prefer fewest pods
-    ))
-
-    return candidates[0]['name']
-```
-
-### Graceful Drain Process
-
-```python
-def drain_node(node_name, timeout=300):
-    """
-    Safely migrate pods to other nodes before termination.
-    """
-    cmd = [
-        'kubectl', 'drain', node_name,
-        '--ignore-daemonsets',        # Keep DaemonSets (node-exporter, fluentd)
-        '--delete-emptydir-data',     # Allow emptyDir volume deletion
-        '--force',                    # Force delete standalone pods
-        f'--timeout={timeout}s',      # Max wait time
-        '--skip-wait-for-delete-timeout=10'  # Don't wait forever for deletion
-    ]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+10)
-        if result.returncode != 0:
-            logger.error(f"Drain failed: {result.stderr}")
-            return False, result.stderr
-
-        logger.info(f"Node {node_name} drained successfully")
-        return True, None
-
-    except subprocess.TimeoutExpired:
-        logger.error(f"Drain timeout after {timeout} seconds")
-        return False, "Timeout"
-```
-
-### PodDisruptionBudget Compliance
-
-```python
-def check_pdb_compliance(node_name):
-    """
-    Ensure draining won't violate PodDisruptionBudgets.
-    """
-    cmd = ['kubectl', 'get', 'pdb', '--all-namespaces', '-o', 'json']
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    pdbs = json.loads(result.stdout)
-
-    for pdb in pdbs['items']:
-        min_available = pdb['spec'].get('minAvailable', 0)
-        current_healthy = pdb['status'].get('currentHealthy', 0)
-
-        # Check if draining this node would violate PDB
-        pods_on_node = get_pods_on_node(node_name, pdb['metadata']['namespace'])
-        pods_matching_pdb = [p for p in pods_on_node if matches_pdb_selector(p, pdb)]
-
-        if current_healthy - len(pods_matching_pdb) < min_available:
-            logger.warning(f"Drain would violate PDB {pdb['metadata']['name']}")
-            return False
-
-    return True
-```
-
----
-
-## Safety Mechanisms
-
-### 1. Minimum Node Count Enforcement (HIGHEST PRIORITY)
-
-```python
-# This check runs BEFORE any other logic
-if current_nodes < min_nodes:
-    nodes_needed = min_nodes - current_nodes
-    return {
-        "action": "scale_up",
-        "nodes": nodes_needed,
-        "reason": f"Enforcing minimum node count ({min_nodes})",
-        "bypass_cooldown": True  # Critical safety, ignore cooldown
-    }
-```
-
-**Behavior**:
-
-- If worker count drops below 2 (e.g., Spot interruptions), autoscaler immediately launches replacements
-- Bypasses cooldown periods
-- Highest priority in decision tree
-
-### 2. Maximum Node Count Cap
-
-```python
-if current_nodes >= max_nodes:
-    logger.warning(f"At maximum capacity ({max_nodes} nodes), cannot scale up")
-    send_slack_alert("⚠️ At Max Capacity", f"Cluster at {max_nodes} nodes, consider increasing limit")
-    return {"action": "no_action", "reason": "At maximum capacity"}
-```
-
-### 3. Distributed Lock (Race Condition Prevention)
-
-```python
-def acquire_lock(cluster_id, timeout=300):
-    try:
-        dynamodb.update_item(
-            TableName='node-fleet-dev-state',
-            Key={'cluster_id': cluster_id},
-            UpdateExpression='SET scaling_in_progress = :true, lock_acquired_at = :now',
-            ConditionExpression='attribute_not_exists(scaling_in_progress) OR scaling_in_progress = :false',
-            ExpressionAttributeValues={':true': True, ':false': False, ':now': datetime.utcnow().isoformat()}
-        )
-        return True
-    except ClientError as e:
-        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-            # Lock already held, check if expired
-            state = get_state(cluster_id)
-            lock_age = (datetime.utcnow() - parse_iso(state['lock_acquired_at'])).seconds
-            if lock_age > timeout:
-                release_lock(cluster_id, force=True)
-                return acquire_lock(cluster_id, timeout)
-            logger.info("Scaling already in progress, skipping")
-            return False
-```
-
-### 4. Cooldown Period Enforcement
-
-```python
-def check_cooldown(last_scale_time, last_action, scale_up_cooldown=300, scale_down_cooldown=600):
-    if not last_scale_time:
-        return True, None  # No previous scaling event
-
-    time_since_last_scale = (datetime.utcnow() - parse_iso(last_scale_time)).seconds
-
-    if last_action == "scale_up":
-        if time_since_last_scale < scale_up_cooldown:
-            remaining = scale_up_cooldown - time_since_last_scale
-            return False, f"Scale-up cooldown: {remaining}s remaining"
-
-    elif last_action == "scale_down":
-        if time_since_last_scale < scale_down_cooldown:
-            remaining = scale_down_cooldown - time_since_last_scale
-            return False, f"Scale-down cooldown: {remaining}s remaining"
-
-    return True, None
-```
-
-### 5. Node Join Timeout
-
-```python
-def wait_for_node_ready(instance_id, timeout=300):
-    """
-    Poll node status until Ready or timeout.
-    """
-    start_time = time.time()
-
-    while time.time() - start_time < timeout:
-        cmd = ['kubectl', 'get', 'node', '-l', f'instance-id={instance_id}', '-o', 'json']
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        try:
-            node_data = json.loads(result.stdout)
-            if node_data['items']:
-                node = node_data['items'][0]
-                conditions = node['status']['conditions']
-                ready_condition = next((c for c in conditions if c['type'] == 'Ready'), None)
-
-                if ready_condition and ready_condition['status'] == 'True':
-                    logger.info(f"Node {instance_id} is Ready")
-                    return True
-        except (json.JSONDecodeError, KeyError, StopIteration):
-            pass
-
-        time.sleep(10)  # Poll every 10 seconds
-
-    logger.error(f"Node {instance_id} did not become Ready within {timeout}s")
-    return False
-```
-
----
-
-## Pseudocode Implementation
-
-### Main Autoscaler Function
-
-```python
-def lambda_handler(event, context):
-    """
-    Main autoscaler entry point.
-    Triggered by EventBridge every 2 minutes.
-    """
-
-    # Step 1: Collect Metrics
-    metrics = collect_metrics_from_prometheus()
-    cpu = metrics['cpu_utilization']
-    memory = metrics['memory_utilization']
-    pending_pods = metrics['pending_pods']
-    current_nodes = metrics['current_node_count']
-
-    # Step 2: Retrieve State
-    state = get_state_from_dynamodb(CLUSTER_ID)
-    last_scale_time = state['last_scale_time']
-    last_scale_action = state['last_scale_action']
-
-    # Step 3: Acquire Lock (exit if held by another invocation)
-    if not acquire_lock(CLUSTER_ID):
-        logger.info("Another scaling operation in progress, exiting")
-        return {"statusCode": 200, "body": "Lock held"}
-
-    try:
-        # Step 4: Check Cooldown
-        can_scale, cooldown_reason = check_cooldown(last_scale_time, last_scale_action)
-        if not can_scale:
-            logger.info(cooldown_reason)
-            return {"statusCode": 200, "body": cooldown_reason}
-
-        # Step 5: Make Scaling Decision
-        decision = make_scaling_decision(
-            cpu=cpu,
-            memory=memory,
-            pending_pods=pending_pods,
-            current_nodes=current_nodes,
-            min_nodes=MIN_NODES,
-            max_nodes=MAX_NODES
-        )
-
-        # Step 6: Execute Decision
-        if decision['action'] == 'scale_up':
-            nodes_added = scale_up(decision['nodes'], current_nodes)
-            update_state(
-                current_node_count=current_nodes + nodes_added,
-                last_scale_action='scale_up',
-                last_scale_time=datetime.utcnow().isoformat()
-            )
-            send_slack_notification(f"🟢 Scale-up: +{nodes_added} nodes, {decision['reason']}")
-
-        elif decision['action'] == 'scale_down':
-            node_removed = scale_down(decision['node_name'])
-            update_state(
-                current_node_count=current_nodes - 1,
-                last_scale_action='scale_down',
-                last_scale_time=datetime.utcnow().isoformat()
-            )
-            send_slack_notification(f"🔵 Scale-down: -1 node, {decision['reason']}")
-
+def select_drain_candidate(workers: List[Dict]) -> Optional[str]:
+    """Returns instance_id of node to drain, or None if no safe candidate."""
+    
+    # Step 1: Check each worker for critical pods
+    eligible = []
+    for worker in workers:
+        has_critical, reason = _check_critical_pods(worker['instance_id'], worker['node_name'])
+        if not has_critical:
+            eligible.append(worker)
         else:
-            logger.info(f"No scaling needed: {decision['reason']}")
-
-        # Step 7: Publish Metrics
-        publish_cloudwatch_metrics(cpu, memory, pending_pods, current_nodes)
-
-    finally:
-        # Step 8: Always Release Lock
-        release_lock(CLUSTER_ID)
-
-    return {"statusCode": 200, "body": "Success"}
-
-
-def make_scaling_decision(cpu, memory, pending_pods, current_nodes, min_nodes, max_nodes):
-    """
-    Core decision engine implementing flowchart logic.
-    """
-
-    # STEP 0: Enforce Minimum (HIGHEST PRIORITY)
-    if current_nodes < min_nodes:
-        nodes_needed = min_nodes - current_nodes
-        return {
-            "action": "scale_up",
-            "nodes": nodes_needed,
-            "reason": f"Enforcing minimum node count ({min_nodes})"
-        }
-
-    # STEP 1: Check Scale-UP Triggers (OR logic)
-    if cpu > 70:
-        nodes_to_add = calculate_scale_up_nodes(current_nodes, max_nodes, pending_pods)
-        return {
-            "action": "scale_up",
-            "nodes": nodes_to_add,
-            "reason": f"CPU {cpu:.1f}% > 70%"
-        }
-
-    if pending_pods > 0:
-        nodes_to_add = 2 if pending_pods > 5 else 1
-        nodes_to_add = min(nodes_to_add, max_nodes - current_nodes)
-        return {
-            "action": "scale_up",
-            "nodes": nodes_to_add,
-            "reason": f"{pending_pods} pending pods, cannot schedule"
-        }
-
-    if memory > 75:
-        nodes_to_add = calculate_scale_up_nodes(current_nodes, max_nodes, 0)
-        return {
-            "action": "scale_up",
-            "nodes": nodes_to_add,
-            "reason": f"Memory {memory:.1f}% > 75%"
-        }
-
-    # STEP 2: Check Scale-DOWN Triggers (AND logic)
-    if cpu < 30 and memory < 50 and pending_pods == 0 and current_nodes > min_nodes:
-        node_to_remove = select_node_to_remove()
-        return {
-            "action": "scale_down",
-            "node_name": node_to_remove,
-            "reason": f"Low utilization: CPU {cpu:.1f}%, Memory {memory:.1f}%"
-        }
-
-    # STEP 3: No Action
-    return {
-        "action": "no_action",
-        "reason": f"Metrics within thresholds (CPU {cpu:.1f}%, Mem {memory:.1f}%)"
-    }
-
-
-def scale_up(nodes_to_add, current_nodes):
-    """
-    Launch new EC2 instances and wait for K3s join.
-    """
-    subnets = select_subnets_for_scale_up(nodes_to_add)
-    instance_ids = []
-
-    for subnet in subnets:
-        market_options = determine_instance_market_options(spot_percentage=70)
-
-        response = ec2.run_instances(
-            LaunchTemplate={'LaunchTemplateId': LAUNCH_TEMPLATE_ID},
-            MinCount=1,
-            MaxCount=1,
-            SubnetId=subnet,
-            InstanceMarketOptions=market_options,
-            TagSpecifications=[{
-                'ResourceType': 'instance',
-                'Tags': [
-                    {'Key': 'Project', 'Value': 'node-fleet'},
-                    {'Key': 'Role', 'Value': 'k3s-worker'},
-                    {'Key': 'ManagedBy', 'Value': 'autoscaler'}
-                ]
-            }]
-        )
-
-        instance_id = response['Instances'][0]['InstanceId']
-        instance_ids.append(instance_id)
-        logger.info(f"Launched instance {instance_id} in subnet {subnet}")
-
-    # Wait for nodes to join K3s cluster
-    for instance_id in instance_ids:
-        if not wait_for_node_ready(instance_id, timeout=300):
-            logger.error(f"Node {instance_id} failed to join cluster")
-            # Tag as failed, but don't terminate (manual investigation)
-            ec2.create_tags(Resources=[instance_id], Tags=[{'Key': 'Status', 'Value': 'join-failed'}])
-
-    return len(instance_ids)
-
-
-def scale_down(node_name):
-    """
-    Drain node and terminate EC2 instance.
-    """
-    # Check PDB compliance
-    if not check_pdb_compliance(node_name):
-        logger.warning(f"Cannot drain {node_name}: PDB violation")
+            logger.info(f"Skipping {worker['node_name']}: {reason}")
+    
+    if not eligible:
+        logger.warning("No eligible nodes for scale-down (all have critical pods)")
         return None
-
-    # Drain node
-    success, error = drain_node(node_name, timeout=300)
-    if not success:
-        logger.error(f"Drain failed: {error}")
-        send_slack_alert("⚠️ Scale-down Failed", f"Could not drain {node_name}: {error}")
-        return None
-
-    # Get instance ID from node
-    instance_id = get_instance_id_from_node(node_name)
-
-    # Terminate EC2 instance
-    ec2.terminate_instances(InstanceIds=[instance_id])
-    logger.info(f"Terminated instance {instance_id}")
-
-    return node_name
+    
+    # Step 2: Prefer removing from AZ with most workers (maintain Multi-AZ balance)
+    az_counts = Counter(w['az'] for w in eligible)
+    max_az = max(az_counts, key=az_counts.get)
+    az_candidates = [w for w in eligible if w['az'] == max_az]
+    
+    # Step 3: From that AZ, pick node with fewest running pods
+    return min(az_candidates, key=lambda w: w['pod_count'])['instance_id']
 ```
 
----
+**Critical pod categories** (checked via SSM `kubectl get pods` on master):
 
-## Example Scenarios
-
-### Scenario 1: Flash Sale Traffic Spike
-
-**Timeline**:
-
-| Time  | CPU | Pending Pods | Action            | Reason                   |
-| ----- | --- | ------------ | ----------------- | ------------------------ |
-| 20:00 | 35% | 0            | No action         | Within limits            |
-| 20:02 | 65% | 0            | No action         | Below 70% threshold      |
-| 20:04 | 82% | 3            | **Scale up +2**   | CPU > 70% + pending pods |
-| 20:06 | 85% | 8            | Cooldown          | Last scale 2 min ago     |
-| 20:08 | 78% | 2            | Cooldown          | Last scale 4 min ago     |
-| 20:10 | 68% | 0            | No action         | New nodes handling load  |
-| 20:30 | 40% | 0            | No action         | Not below 30% yet        |
-| 20:40 | 28% | 0            | **Scale down -1** | Low CPU, 10+ min stable  |
-
-**Result**: Handled spike with +2 nodes in 4 minutes, scaled down after 40 minutes of low utilization.
-
-### Scenario 2: Spot Instance Interruption
-
-**Timeline**:
-
-| Time  | Event                             | Current Nodes                  | Action                       |
-| ----- | --------------------------------- | ------------------------------ | ---------------------------- |
-| 10:00 | Normal operation                  | 4 (3 Spot + 1 On-Demand)       | -                            |
-| 10:02 | Spot interruption warning (2 min) | 4 → 3 (draining)               | EventBridge triggers handler |
-| 10:04 | Next autoscaler cycle             | 3 < MIN_NODES (4 in this case) | **Scale up +1 On-Demand**    |
-| 10:07 | New On-Demand node Ready          | 4                              | Restored to minimum          |
-
-**Result**: Self-healed within 5 minutes of Spot interruption.
+| Category | Check | Why Protected |
+|----------|-------|---------------|
+| StatefulSet pods | Pod has `ownerReference.kind=StatefulSet` | Stateful data; no safe replica elsewhere |
+| kube-system non-DaemonSet | Namespace=kube-system AND not DaemonSet-owned | CoreDNS, metrics-server — loss breaks cluster |
+| Single-replica Deployments | Deployment with `replicas=1` | No redundancy; eviction = downtime |
+| DaemonSet pods | **Not** protected | DaemonSet re-schedules immediately on other nodes |
 
 ---
 
-_For deployment instructions, see [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)._
+## 9. Dynamic Scheduling
+
+`lambda/dynamic_scheduler.py` adjusts the EventBridge rule rate at runtime based on conditions:
+
+| Condition | Rate | Rationale |
+|-----------|------|-----------|
+| Peak hours (9AM–9PM) or CPU>60% | 1 min | Faster response during business hours |
+| Normal (CPU 30–60%) | 2 min | Default — balance cost vs responsiveness |
+| Off-peak (9PM–9AM) AND CPU<30% | 5 min | Reduce Lambda invocations; saves ~$0.30/mo |
+
+Lambda calls `events:put_rule` to update the schedule after each stable invocation. Cooldown on schedule changes: 30 minutes (prevents thrashing).
+
+---
+
+## 10. Safety Mechanisms Summary
+
+| Mechanism | Implementation | Protects Against |
+|-----------|----------------|-----------------|
+| Min node floor | Check before any scale-down decision | Never going below 2 workers |
+| Max node ceiling | Check before any scale-up decision | EC2 quota exhaustion + cost runaway |
+| DynamoDB lock | Conditional write; single holder | Concurrent Lambda race condition |
+| Lock expiry (360s) | TTL-based auto-clear | Lambda crash leaving orphaned lock |
+| Drain validation | exit_code==0 AND "drained" keyword | Premature termination of partially-drained node |
+| Drain timeout (300s) | SSM command timeout | Hung drain — aborts rather than force-terminates |
+| Critical pod protection | SSM check before drain | StatefulSet data loss + CoreDNS outage |
+| Cooldown periods | 300s/600s per action | Thrashing (scale-up → scale-down → scale-up) |
+| Node join validation | Poll Ready state (5 min max) | Terminating failed nodes that never joined |
+| Async drain (SSM) | Initiated N, completed N+1 | Lambda timeout during long drain operations |
+| Finally block | Lock release unconditional | Exception leaving lock permanently held |

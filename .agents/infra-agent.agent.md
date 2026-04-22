@@ -44,6 +44,10 @@ ignorePatterns:
 ## 📚 Always Read First
 
 1. **[.agents/CONTEXT.md](.agents/CONTEXT.md)** — MANDATORY. Complete architecture, secrets, IAM, networking.
+2. **[.agents/skills/pulumi-best-practices/SKILL.md](.agents/skills/pulumi-best-practices/SKILL.md)** — Pulumi TypeScript patterns, outputs, components, aliases.
+3. **[.agents/skills/k3s-devops/SKILL.md](.agents/skills/k3s-devops/SKILL.md)** — K3s cluster ops, worker join, drain, async SSM patterns.
+4. **[.agents/skills/aws-cloud-patterns/SKILL.md](.agents/skills/aws-cloud-patterns/SKILL.md)** — EC2 launch/terminate, IAM least-privilege, CloudWatch metrics.
+5. **[.agents/skills/prometheus-monitoring/SKILL.md](.agents/skills/prometheus-monitoring/SKILL.md)** — Prometheus deployment, scrape config, alert rules.
 
 ---
 

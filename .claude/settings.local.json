@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(python -m pytest tests/lambda/ --collect-only -q)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3.11 -c ' *)",
+      "Bash(py -3 -c ' *)",
+      "Bash(npx --yes @excalidraw/export-cli@latest --help)",
+      "Bash(npx playwright *)",
+      "Bash(node export-png.js)",
+      "Bash(grep -v \"\\\\.pyc$\")"
+    ]
+  }
+}

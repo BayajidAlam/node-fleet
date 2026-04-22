@@ -14,6 +14,16 @@ data:
       url: http://prometheus:9090
       isDefault: true
       editable: true
+  cloudwatch.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: CloudWatch
+      type: cloudwatch
+      access: proxy
+      jsonData:
+        authType: default
+        defaultRegion: ap-southeast-1
+      editable: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -50,6 +60,10 @@ spec:
               mountPath: /var/lib/grafana
             - name: grafana-datasources
               mountPath: /etc/grafana/provisioning/datasources
+            - name: grafana-dashboards-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-dashboards
+              mountPath: /var/lib/grafana/dashboards
           resources:
             requests:
               memory: "256Mi"
@@ -63,6 +77,12 @@ spec:
         - name: grafana-datasources
           configMap:
             name: grafana-datasources
+        - name: grafana-dashboards-provisioning
+          configMap:
+            name: grafana-dashboard-provider
+        - name: grafana-dashboards
+          configMap:
+            name: grafana-dashboards
 ---
 apiVersion: v1
 kind: Service
@@ -78,3 +98,24 @@ spec:
       port: 3000
       targetPort: 3000
       nodePort: 30300
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+    - name: node-fleet
+      folder: Node-Fleet
+      type: file
+      disableDeletion: false
+      updateIntervalSeconds: 30
+      options:
+        path: /var/lib/grafana/dashboards
+# grafana-dashboards ConfigMap is created from files at deploy time:
+#   kubectl create configmap grafana-dashboards \
+#     --from-file=monitoring/grafana-dashboards/ \
+#     -n monitoring --dry-run=client -o yaml | kubectl apply -f -

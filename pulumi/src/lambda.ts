@@ -100,10 +100,10 @@ export const lambdaPermission = new aws.lambda.Permission(
   },
 );
 
-// CloudWatch Log Group for Lambda (7 day retention)
+// CloudWatch Log Group for Lambda (30 day retention per spec)
 export const lambdaLogGroup = new aws.cloudwatch.LogGroup("autoscaler-logs", {
   name: pulumi.interpolate`/aws/lambda/${autoscalerLambda.name}`,
-  retentionInDays: 7,
+  retentionInDays: 30,
   tags: {
     Project: "node-fleet",
   },

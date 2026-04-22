@@ -178,19 +178,214 @@ def test_lambda_handler_lock_held(mock_metrics, mock_state_mgr, mock_ec2, mock_c
 @patch('autoscaler.collect_metrics')
 def test_lambda_handler_error_handling(mock_metrics, mock_state_mgr, mock_ec2, mock_creds, mock_notify, mock_env):
     """Test error handling in Lambda"""
-    # Mock metrics to raise error
     mock_metrics.side_effect = Exception("Prometheus connection failed")
-    
-    # Mock EC2 manager — Step 0 returns empty lists (no pending ops)
+
     ec2_instance = MagicMock()
     ec2_instance.complete_pending_drains.return_value = []
     ec2_instance.check_pending_scale_ups.return_value = []
     mock_ec2.return_value = ec2_instance
-    
-    # Execute and expect exception
+
     with pytest.raises(Exception, match="Prometheus connection failed"):
         autoscaler.lambda_handler({}, {})
-    
-    # Verify error notification sent
+
     mock_notify.assert_called_once()
     assert "Error" in mock_notify.call_args[0][0]
+
+
+@patch('autoscaler.send_notification')
+@patch('autoscaler.get_prometheus_credentials', return_value=('user', 'pass'))
+@patch('autoscaler.EC2Manager')
+@patch('autoscaler.StateManager')
+@patch('autoscaler.collect_metrics')
+def test_lambda_handler_scale_down(mock_metrics, mock_state_mgr, mock_ec2, mock_creds, mock_notify, mock_env):
+    """Test full scale-down workflow"""
+    mock_metrics.return_value = {
+        'cpu_usage': 25.0,
+        'memory_usage': 40.0,
+        'pending_pods': 0,
+        'node_count': 5
+    }
+
+    state_instance = MagicMock()
+    state_instance.acquire_lock.return_value = True
+    state_instance.get_state.return_value = {
+        'node_count': 5,
+        'last_scale_time': 0,
+        'metrics_history': [
+            {'timestamp': t, 'cpu_usage': 25.0, 'memory_usage': 40.0, 'pending_pods': 0}
+            for t in range(4)
+        ]
+    }
+    mock_state_mgr.return_value = state_instance
+
+    ec2_instance = MagicMock()
+    ec2_instance.complete_pending_drains.return_value = []
+    ec2_instance.check_pending_scale_ups.return_value = []
+    ec2_instance.scale_down.return_value = {'success': True, 'instance_ids': ['i-old1']}
+    mock_ec2.return_value = ec2_instance
+
+    result = autoscaler.lambda_handler({}, {})
+
+    assert result['statusCode'] == 200
+    ec2_instance.scale_down.assert_called_once()
+    state_instance.release_lock.assert_called_once()
+
+
+@patch('autoscaler.send_notification')
+@patch('autoscaler.get_prometheus_credentials', return_value=('user', 'pass'))
+@patch('autoscaler.EC2Manager')
+@patch('autoscaler.StateManager')
+@patch('autoscaler.collect_metrics')
+def test_lock_always_released_on_exception(mock_metrics, mock_state_mgr, mock_ec2, mock_creds, mock_notify, mock_env):
+    """Lock released in finally even when scale_up raises"""
+    mock_metrics.return_value = {
+        'cpu_usage': 75.0, 'memory_usage': 50.0, 'pending_pods': 2, 'node_count': 3
+    }
+
+    state_instance = MagicMock()
+    state_instance.acquire_lock.return_value = True
+    state_instance.get_state.return_value = {
+        'node_count': 3, 'last_scale_time': 0,
+        'metrics_history': [
+            {'timestamp': t, 'cpu_usage': 75.0, 'memory_usage': 50.0, 'pending_pods': 2}
+            for t in range(2)
+        ]
+    }
+    mock_state_mgr.return_value = state_instance
+
+    ec2_instance = MagicMock()
+    ec2_instance.complete_pending_drains.return_value = []
+    ec2_instance.check_pending_scale_ups.return_value = []
+    ec2_instance.scale_up.side_effect = Exception("EC2 API failure")
+    mock_ec2.return_value = ec2_instance
+
+    with pytest.raises(Exception, match="EC2 API failure"):
+        autoscaler.lambda_handler({}, {})
+
+    state_instance.release_lock.assert_called_once()
+
+
+@patch('autoscaler.send_notification')
+@patch('autoscaler.EC2Manager')
+@patch('autoscaler.StateManager')
+@patch('autoscaler.collect_metrics')
+def test_prometheus_credentials_env_vars_fallback(mock_metrics, mock_state_mgr, mock_ec2, mock_notify, mock_env, monkeypatch):
+    """Credentials loaded from env vars when Secrets Manager fails"""
+    monkeypatch.setenv('PROMETHEUS_USERNAME', 'env-user')
+    monkeypatch.setenv('PROMETHEUS_PASSWORD', 'env-pass')
+
+    import boto3
+    with patch('autoscaler.boto3') as mock_b3:
+        sm = MagicMock()
+        sm.get_secret_value.side_effect = Exception("Secrets Manager unavailable")
+        mock_b3.client.return_value = sm
+
+        user, pwd = autoscaler.get_prometheus_credentials()
+
+    assert user == 'env-user'
+    assert pwd == 'env-pass'
+
+
+def test_prometheus_credentials_missing_raises(mock_env, monkeypatch):
+    """Missing credentials raise ValueError — fail-fast, never hardcoded fallback"""
+    monkeypatch.delenv('PROMETHEUS_USERNAME', raising=False)
+    monkeypatch.delenv('PROMETHEUS_PASSWORD', raising=False)
+
+    with patch('autoscaler.boto3') as mock_b3:
+        sm = MagicMock()
+        sm.get_secret_value.side_effect = Exception("unavailable")
+        mock_b3.client.return_value = sm
+
+        with pytest.raises(ValueError, match="Prometheus credentials"):
+            autoscaler.get_prometheus_credentials()
+
+
+@patch('autoscaler.send_notification')
+@patch('autoscaler.get_prometheus_credentials', return_value=('user', 'pass'))
+@patch('autoscaler.EC2Manager')
+@patch('autoscaler.StateManager')
+@patch('autoscaler.collect_metrics')
+def test_pending_drain_completed_step0(mock_metrics, mock_state_mgr, mock_ec2, mock_creds, mock_notify, mock_env):
+    """Step 0: pending drain from previous invocation completed → notification sent"""
+    mock_metrics.return_value = {
+        'cpu_usage': 50.0, 'memory_usage': 50.0, 'pending_pods': 0, 'node_count': 3
+    }
+
+    state_instance = MagicMock()
+    state_instance.acquire_lock.return_value = True
+    state_instance.get_state.return_value = {'node_count': 3, 'last_scale_time': 0, 'metrics_history': []}
+    mock_state_mgr.return_value = state_instance
+
+    ec2_instance = MagicMock()
+    ec2_instance.complete_pending_drains.return_value = ['i-terminated1']  # 1 drain completed
+    ec2_instance.check_pending_scale_ups.return_value = []
+    mock_ec2.return_value = ec2_instance
+
+    result = autoscaler.lambda_handler({}, {})
+
+    assert result['statusCode'] == 200
+    # Notification sent for completed drain
+    assert mock_notify.call_count >= 1
+    drain_notif = mock_notify.call_args_list[0][0][0]
+    assert 'i-terminated1' in drain_notif
+
+
+@patch('autoscaler.send_notification')
+@patch('autoscaler.get_prometheus_credentials', return_value=('user', 'pass'))
+@patch('autoscaler.EC2Manager')
+@patch('autoscaler.StateManager')
+@patch('autoscaler.collect_metrics')
+def test_spot_interruption_event_handled(mock_metrics, mock_state_mgr, mock_ec2, mock_creds, mock_notify, mock_env):
+    """Spot interruption event routes to handle_spot_interruption_event"""
+    event = {
+        'detail-type': 'EC2 Spot Instance Interruption Warning',
+        'detail': {'instance-id': 'i-spot123'}
+    }
+
+    ec2_instance = MagicMock()
+    ec2_instance.complete_pending_drains.return_value = []
+    ec2_instance.check_pending_scale_ups.return_value = []
+    ec2_instance.handle_spot_interruption_event.return_value = {
+        'success': True, 'action': 'drain_initiated', 'node': 'spot.internal', 'reason': 'Spot warning'
+    }
+    mock_ec2.return_value = ec2_instance
+
+    result = autoscaler.lambda_handler(event, {})
+
+    assert result['statusCode'] == 200
+    ec2_instance.handle_spot_interruption_event.assert_called_once_with('i-spot123')
+
+
+@patch('autoscaler.send_notification')
+@patch('autoscaler.get_prometheus_credentials', return_value=('user', 'pass'))
+@patch('autoscaler.EC2Manager')
+@patch('autoscaler.StateManager')
+@patch('autoscaler.collect_metrics')
+def test_scale_up_stores_pending_in_state(mock_metrics, mock_state_mgr, mock_ec2, mock_creds, mock_notify, mock_env):
+    """After scale-up, state updated with new node count"""
+    mock_metrics.return_value = {
+        'cpu_usage': 75.0, 'memory_usage': 50.0, 'pending_pods': 2, 'node_count': 3
+    }
+
+    state_instance = MagicMock()
+    state_instance.acquire_lock.return_value = True
+    state_instance.get_state.return_value = {
+        'node_count': 3, 'last_scale_time': 0,
+        'metrics_history': [
+            {'timestamp': t, 'cpu_usage': 75.0, 'memory_usage': 50.0, 'pending_pods': 2}
+            for t in range(2)
+        ]
+    }
+    mock_state_mgr.return_value = state_instance
+
+    ec2_instance = MagicMock()
+    ec2_instance.complete_pending_drains.return_value = []
+    ec2_instance.check_pending_scale_ups.return_value = []
+    ec2_instance.scale_up.return_value = {
+        'success': True, 'instance_ids': ['i-x'], 'spot_count': 1, 'ondemand_count': 0
+    }
+    mock_ec2.return_value = ec2_instance
+
+    autoscaler.lambda_handler({}, {})
+
+    state_instance.update_state.assert_called_once_with(4)  # 3 + 1

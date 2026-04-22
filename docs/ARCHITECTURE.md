@@ -1,1153 +1,420 @@
-# node-fleet K3s Autoscaler - Detailed Architecture
+# node-fleet — Architecture
 
-![System Architecture](diagrams/system_architecture.png)
+> **Cluster topology**: 1 fixed master (t3.medium) + 2–10 autoscaled workers (t3.small). All node counts in this doc refer to **workers** unless stated.
 
-> **Important: Cluster Topology**
->
-> - **Fixed**: 1 master node (never scales, runs in single AZ)
-> - **Scalable**: 2-10 worker nodes (autoscaler manages these)
-> - **Minimum Cluster**: 1 master + 2 workers = **3 nodes total (always)**
-> - **Multi-AZ**: 2 initial workers launch in different AZs for high availability
-> - **All node counts in this document refer to WORKER nodes unless explicitly stated**
-
-## Table of Contents
-
-1. [System Overview](#system-overview)
-2. [Component Architecture](#component-architecture)
-3. [Network Topology](#network-topology)
-4. [Data Flow Sequences](#data-flow-sequences)
-5. [State Management](#state-management)
-6. [Security Architecture](#security-architecture)
-7. [High Availability Design](#high-availability-design)
+Diagrams: [System Architecture](diagrams/system-architecture.png) · [Network Topology](diagrams/network-topology.png) · [Data Flow](diagrams/data-flow.png) · [Scaling Logic](diagrams/scaling-logic-flowchart.png)
 
 ---
 
-## System Overview
+## 1. System Overview
 
-node-fleet is a serverless autoscaling system for K3s clusters on AWS that uses event-driven architecture to dynamically adjust cluster capacity based on real-time metrics.
+node-fleet solves a real cost problem: a static worker fleet (baseline assumption: 5 workers running 24/7) wastes 60,000 BDT/month during off-peak hours (9PM–9AM, CPU 20–30%) and takes 15–20 minutes to scale manually during flash sales. The autoscaler replaces the static fleet with a dynamic 2–10 worker pool and eliminates both problems.
+
+**How it works**: An EventBridge rule fires a Python Lambda every 2 minutes. Lambda queries Prometheus for real-time cluster metrics, runs a three-layer decision engine (reactive thresholds + predictive patterns + custom app metrics), and executes the scaling action. New workers launch via EC2 RunInstances and auto-join the K3s cluster through a userdata script. Scale-down uses an async SSM drain pattern to safely evict workloads before termination.
 
 ### Architecture Principles
 
-1. **Serverless-First**: Lambda for autoscaling logic eliminates operational overhead
-2. **Event-Driven**: EventBridge triggers enable precise timing and cost control
-3. **State Management**: DynamoDB provides distributed locking and audit trails
-4. **Observable**: Prometheus + Grafana + CloudWatch provide complete visibility
-5. **Secure by Default**: No hardcoded credentials, least-privilege IAM, encryption everywhere
+| Principle | Implementation |
+|-----------|---------------|
+| **Serverless-First** | Lambda for orchestration — $0.40/month vs $7+/month for EC2 cron |
+| **Event-Driven** | EventBridge triggers; SSM async drain; EventBridge for Spot interruptions |
+| **State-Isolated** | DynamoDB conditional writes prevent split-brain between concurrent Lambdas |
+| **Observable** | Prometheus + Grafana + CloudWatch + SNS covers all observability layers |
+| **Secure by Default** | No hardcoded credentials; Secrets Manager for all secrets; least-privilege IAM |
+| **Gradual and Safe** | Scale-down drains workloads first; critical pod protection prevents disruptions |
 
 ### Key Design Decisions
 
-| Decision                         | Rationale                                                                     |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| **K3s over EKS**                 | 50% lower resource overhead, full K8s compatibility, free control plane       |
-| **Lambda over EC2 cron**         | $0.50/month vs $7/month, auto-scaling, no patching required                   |
-| **DynamoDB over RDS**            | Serverless pricing model, built-in distributed locking via conditional writes |
-| **Pulumi over Terraform**        | TypeScript type safety, real programming language, better testability         |
-| **Prometheus over CloudWatch**   | K8s-native metrics, free, PromQL query power                                  |
-| **EventBridge over Lambda cron** | Native AWS integration, easier rate adjustments, no cron expression parsing   |
+| Decision | Chosen | Alternative Rejected | Why |
+|----------|--------|---------------------|-----|
+| K8s distribution | K3s | EKS | 50% lower resource overhead; free control plane; same kubectl |
+| Autoscaler runtime | AWS Lambda | EC2 cron | $0.40/month; no patching; auto-scales; event-driven |
+| State backend | DynamoDB | RDS | Serverless pricing; atomic conditional writes for locking |
+| IaC | Pulumi TypeScript | Terraform | Type safety; real language; better test integration |
+| Metrics | Prometheus | CloudWatch | K8s-native; PromQL expressiveness; free; 7-day history |
+| Scheduling | EventBridge | Lambda cron | Native AWS; clean rate expressions; easy to disable |
+| Prometheus access | NodePort 30090 | LoadBalancer | Saves ~$16/month ELB cost; Lambda has direct VPC access |
+| Drain mechanism | SSM async | SSH | No bastion host; Lambda can't SSH; SSM works without open SSH port |
+| Secret storage | Secrets Manager | S3 | Secrets Manager: encrypted at rest + in transit, per-secret IAM scoping, automatic rotation support, audit via CloudTrail — S3 requires separate KMS + bucket policy management with higher misconfiguration risk |
 
 ---
 
-## Metrics Collection Architecture
+## 2. Component Architecture
 
-node-fleet uses **Prometheus as the unified metrics aggregator**, which collects data from two key sources:
+### AWS Infrastructure
 
-![Metrics Architecture](diagrams/metrics_architecture.png)
+![System Architecture](diagrams/system-architecture.png)
 
-### Metrics Sources
+### Component Roles
 
-**1. node-exporter** (System-level metrics)
+| Component | Role | Connection to others |
+|-----------|------|---------------------|
+| **EventBridge** | Fires Lambda every 2 min | → Lambda invocation |
+| **Lambda** | 7-step autoscaler orchestrator | ↔ DynamoDB, → Prometheus, → EC2, → SSM, → CloudWatch, → SNS |
+| **Prometheus** | Metrics aggregation | ← node-exporter, ← kube-state-metrics, ← demo-app; → Lambda (PromQL) |
+| **DynamoDB** | Distributed lock + state + drain tracking | ↔ Lambda |
+| **Secrets Manager** | K3s token, Prometheus auth, Slack webhook | ← Lambda, ← worker userdata |
+| **EC2 Launch Template** | Reproducible worker config (t3.small, 20GB gp3, Spot) | ← Lambda RunInstances |
+| **K3s** | Container orchestration | Workers auto-join via token from Secrets Manager |
+| **SSM** | Remote kubectl commands for drain | ← Lambda (async), → master node |
+| **CloudWatch** | 10 custom metrics + 8 alarms + 30d logs | ← Lambda |
+| **SNS** | Alert routing | ← Lambda, → Slack webhook Lambda |
+| **Grafana** | 4 dashboards | ← Prometheus, ← CloudWatch |
+| **FluxCD** | GitOps — auto-apply K8s manifests | ← Git repo (main branch) |
+| **ECR** | Container registry for demo app | ← worker IAM pull permissions |
+| **SQS (DLQ)** | Dead-letter queue — captures Lambda invocation failures | ← Lambda (on failure); IAM: `sqs:SendMessage` scoped to DLQ ARN |
+| **Dynamic Scheduler** | Adjusts EventBridge rate (1–5 min) based on time-of-day and load | ← `lambda/dynamic_scheduler.py`; → EventBridge `put-rule` API |
 
-- Runs as a DaemonSet on every worker node
-- Exposes metrics on port 9100
-- Collects: CPU usage, memory, disk I/O, network I/O
-- Scrape interval: 15 seconds
-- Key metrics:
-  - `node_cpu_seconds_total` - CPU time per core
-  - `node_memory_MemAvailable_bytes` - Available memory
-  - `node_disk_io_time_seconds_total` - Disk I/O time
-  - `node_network_receive_bytes_total` - Network traffic
+### Lambda 7-Step Orchestration
 
-**2. kube-state-metrics** (Kubernetes object metrics)
+Every EventBridge invocation runs these steps in order. Lock released in `finally` — always, even on crash.
 
-- Runs on the master node
-- Exposes metrics on port 8080
-- Exposes K8s object state as Prometheus metrics
-- Key metrics:
-  - `kube_pod_status_phase{phase="Pending"}` - **Most critical for scaling**
-  - `kube_node_info` - Node inventory
-  - `kube_pod_container_resource_requests` - Resource requests
-
-### Lambda Query Flow
-
-```python
-# Lambda queries Prometheus, which aggregates both sources
-def collect_metrics():
-    # CPU from node-exporter
-    cpu = query_prometheus('avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100')
-
-    # Memory from node-exporter
-    memory = query_prometheus('(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100')
-
-    # Pending pods from kube-state-metrics
-    pending_pods = query_prometheus('sum(kube_pod_status_phase{phase="Pending"})')
-
-    return {'cpu': cpu, 'memory': memory, 'pending_pods': pending_pods}
-```
+| Step | Action | Detail |
+|------|--------|--------|
+| **1** | Check pending drains | Query DynamoDB `draining_instances`; if SSM drain complete (exit 0 + "drained" in output) → terminate + `kubectl delete node` |
+| **2** | Acquire DynamoDB lock | Conditional write: `attribute_not_exists(scaling_in_progress) OR lock_expiry < now`; if fails → exit (other Lambda running) |
+| **3** | Fetch metrics | PromQL to Prometheus NodePort :30090 (basic auth from Secrets Manager): CPU, memory, pending pods, node count |
+| **4** | Scaling decision | `scaling_decision.py`: evaluate thresholds against `metrics_history` windows + cooldowns + predictive layer |
+| **5** | Execute action | Scale-up → EC2 `RunInstances` + poll Ready; Scale-down → SSM `kubectl drain` (async, returns in <5s) |
+| **6** | Update state | DynamoDB (node_count, last_scale_action, draining_instances); CloudWatch custom metrics; SNS → Slack |
+| **7** | Release lock | Always in `finally` block; deletes `scaling_in_progress` attribute |
 
 ---
 
-## Component Architecture
+## 3. Network Topology
 
-### AWS Infrastructure Components
-
-```mermaid
-graph TB
-    subgraph AWS["AWS Cloud"]
-        subgraph VPC["VPC (10.0.0.0/16)"]
-            style VPC fill:#f8f9fa,stroke:#333,stroke-width:2px,color:#000
-
-            subgraph Public["Public Subnets (NAT Layer)"]
-                style Public fill:#e3f2fd,stroke:#1565c0,color:#000
-                NAT1["NAT Gateway (AZ-1a)"]
-                NAT2["NAT Gateway (AZ-1b)"]
-            end
-
-            subgraph Private["Private Subnets (Workloads)"]
-                style Private fill:#e8f5e9,stroke:#2e7d32,color:#000
-                Master["K3s Master (t3.medium)<br>• Prometheus<br>• Grafana<br>• FluxCD"]
-                style Master fill:#c8e6c9,stroke:#1b5e20,color:#000
-
-                subgraph Workers["Worker Fleet (Auto-scaled 2-10)"]
-                    style Workers fill:#fff3e0,stroke:#ef6c00,color:#000
-                    W1["Worker (Spot)"]
-                    W2["Worker (On-Demand)"]
-                end
-            end
-        end
-
-        subgraph Serverless["Control Plane"]
-            style Serverless fill:#f3e5f5,stroke:#7b1fa2,color:#000
-            EB("EventBridge<br>(2 min rate)")
-            Lambda("Lambda Autoscaler<br>(Python 3.11)")
-            style Lambda fill:#e1bee7,stroke:#4a148c,stroke-width:2px,color:#000
-        end
-
-        subgraph Data["State & Config"]
-            style Data fill:#fff9c4,stroke:#fbc02d,color:#000
-            DDB[("DynamoDB<br>State Table")]
-            Secret[("Secrets Manager")]
-        end
-
-        subgraph Monitoring["Observability"]
-            style Monitoring fill:#ffebee,stroke:#c62828,color:#000
-            CW["CloudWatch"]
-            SNS["SNS Topic"]
-        end
-    end
-
-    Slack["Slack Alerts"]
-    style Slack fill:#4a154b,stroke:#fff,color:#fff
-
-    %% Data Flow
-    EB -->|Trigger| Lambda
-    Lambda -->|1. Query Metrics| Master
-    Lambda -->|2. Acquire Lock| DDB
-    Lambda -->|3. Get Creds| Secret
-    Lambda -->|4. Launch/Drain| Workers
-    Lambda -->|5. Log Events| CW
-    Lambda -->|6. Notify| SNS
-    SNS -->|Webhook| Slack
-
-    %% Network Flow
-    Master <-->|API/Metrics| Workers
-    Workers -->|Internet Access| NAT1 & NAT2
-```
-
----
-
-## Network Topology
+![Network Topology](diagrams/network-topology.png)
 
 ### VPC Design
 
-**CIDR Block**: `10.0.0.0/16` (65,536 IP addresses)
+**CIDR**: `10.0.0.0/16` (65,536 IPs)  
+**Region**: `ap-southeast-1` (Singapore)
 
-#### Subnet Allocation
+| Subnet | CIDR | AZ | Purpose | Route Table |
+|--------|------|----|---------|-------------|
+| Public-1a | 10.0.1.0/24 | ap-southeast-1a | NAT Gateway | 0.0.0.0/0 → IGW |
+| Public-1b | 10.0.2.0/24 | ap-southeast-1b | NAT Gateway | 0.0.0.0/0 → IGW |
+| Private-1a | 10.0.11.0/24 | ap-southeast-1a | K3s Master + workers | 0.0.0.0/0 → NAT-1a |
+| Private-1b | 10.0.12.0/24 | ap-southeast-1b | Workers (Multi-AZ) | 0.0.0.0/0 → NAT-1b |
 
-| Subnet Type | CIDR         | AZ              | Purpose                          | Route Table |
-| ----------- | ------------ | --------------- | -------------------------------- | ----------- |
-| Public-1    | 10.0.1.0/24  | ap-southeast-1a | NAT Gateway, Bastion (if needed) | IGW         |
-| Public-2    | 10.0.2.0/24  | ap-southeast-1b | NAT Gateway redundancy           | IGW         |
-| Private-1   | 10.0.11.0/24 | ap-southeast-1a | K3s Master, Workers              | NAT-1       |
-| Private-2   | 10.0.12.0/24 | ap-southeast-1b | Workers (Multi-AZ)               | NAT-2       |
+**Why private subnets for workers?** Workers have no public IPs. All outbound internet traffic (ECR pulls, Secrets Manager, package downloads) goes through NAT Gateways. This reduces attack surface and prevents direct internet access to K3s API.
 
-#### Security Group Rules
+### Security Groups
 
-**sg-master (K3s Master Node)**
+**sg-master**
 
-| Direction | Protocol | Port Range | Source               | Purpose         |
-| --------- | -------- | ---------- | -------------------- | --------------- |
-| Inbound   | TCP      | 6443       | sg-worker            | K3s API Server  |
-| Inbound   | TCP      | 30090      | sg-lambda, 0.0.0.0/0 | Prometheus API  |
-| Inbound   | TCP      | 30030      | 0.0.0.0/0            | Grafana UI      |
-| Inbound   | TCP      | 22         | 0.0.0.0/0            | SSH Admin       |
-| Outbound  | All      | All        | 0.0.0.0/0            | Internet Access |
+| Direction | Protocol | Port | Source | Purpose |
+|-----------|----------|------|--------|---------|
+| Inbound | TCP | 6443 | sg-worker | K3s API server |
+| Inbound | TCP | 30090 | sg-lambda | Prometheus NodePort |
+| Inbound | TCP | 30030 | 0.0.0.0/0 | Grafana UI |
+| Inbound | TCP | 22 | 0.0.0.0/0 | SSH admin |
+| Outbound | ALL | ALL | 0.0.0.0/0 | Internet via NAT |
 
-**sg-worker (K3s Worker Nodes)**
+**sg-worker**
 
-| Direction | Protocol | Port Range | Source    | Purpose           |
-| --------- | -------- | ---------- | --------- | ----------------- |
-| Inbound   | TCP      | 22         | 0.0.0.0/0 | SSH Admin         |
-| Inbound   | All      | All        | sg-master | K3s Control Plane |
-| Outbound  | All      | All        | 0.0.0.0/0 | Internet Access   |
+| Direction | Protocol | Port | Source | Purpose |
+|-----------|----------|------|--------|---------|
+| Inbound | ALL | ALL | sg-master | K3s control plane traffic |
+| Inbound | UDP | 8472 | sg-worker | Flannel VXLAN — pod networking between workers |
+| Inbound | TCP | 22 | 0.0.0.0/0 | SSH admin |
+| Outbound | ALL | ALL | 0.0.0.0/0 | Internet via NAT |
 
-**sg-lambda (Lambda Function)**
+**sg-lambda**
 
-| Direction | Protocol | Port Range | Source    | Purpose                           |
-| --------- | -------- | ---------- | --------- | --------------------------------- |
-| Outbound  | TCP      | 30090      | sg-master | Prometheus Queries                |
-| Outbound  | TCP      | 443        | 0.0.0.0/0 | AWS APIs (EC2, DynamoDB, Secrets) |
-
----
-
-## Data Flow Sequences
-
-### Scale-Up Sequence
-
-![Scale Up Flow](diagrams/scale_up_sequence.png)
-
-**CloudWatch Alarm Configuration for Scale-Up Events**:
-
-![Scale Up Alarm](alarms/Scale%20Up.png)
-
-### Scale-Down Sequence
-
-![Scale Down Flow](diagrams/scale_down_sequence.png)
-
-**CloudWatch Alarm Configuration for Scale-Down Events**:
-
-![Scale Down Alarm](alarms/Scale%20Down.png)
+| Direction | Protocol | Port | Destination | Purpose |
+|-----------|----------|------|-------------|---------|
+| Outbound | TCP | 30090 | sg-master | Prometheus PromQL queries |
+| Outbound | TCP | 443 | 0.0.0.0/0 | AWS APIs: EC2, DynamoDB, SSM, Secrets, SNS |
 
 ---
 
-## State Management
+## 4. Data Flow Sequences
 
-### DynamoDB State Schema
+![Data Flow](diagrams/data-flow.png)
 
-**Table: node-fleet-dev-state**
+### Scale-Up Flow (Decision to Capacity)
+
+```
+① EventBridge fires Lambda (rate: 2 min)
+     ↓
+② Lambda queries DynamoDB: check draining_instances from prior run
+     → If drain completed: terminate instance + kubectl delete node
+     ↓
+③ Lambda acquires DynamoDB lock
+     ConditExpression: attribute_not_exists(scaling_in_progress) OR lock_expiry < now
+     → If locked: exit gracefully (concurrent invocation)
+     ↓
+④ Lambda queries Prometheus (HTTP GET :30090/api/v1/query, basic auth)
+     Returns: cpu=74.3%, memory=68.1%, pending_pods=3, node_count=3
+     ↓
+⑤ Decision engine: CPU 74.3% for 3rd consecutive reading → scale_up
+     pending_pods=3 for 2nd consecutive reading → scale_up confirmed
+     +1 node (CPU<85% AND pending<5 — standard increment, not urgent)
+     ↓
+⑥ EC2 RunInstances (×1)
+     Launch Template: t3.small, 20GB gp3 encrypted, Spot (70%)
+     AZ distribution: 1× ap-southeast-1a (least workers)
+     Userdata: fetch K3s token from Secrets Manager → k3s agent join
+     ↓
+⑦ Lambda stores pending instance ID in DynamoDB: pending_scale_ups=["i-0abc123"]
+   Lock released (finally block) — Lambda exits (~28s total)
+     ↓
+   [Worker boots async: ~60-90s]
+     sudo -E K3S_URL=https://<master-private-ip>:6443 \
+           K3S_TOKEN=<token> \
+           sh -s - agent
+     → Node appears in kubectl get nodes
+     ↓
+⑧ Invocation N+1 (2 minutes later): Step 1 checks pending_scale_ups
+     EC2 describe: instance Running + node Ready → confirmed (elapsed: 88s)
+     If not Ready after 5min → terminate + alert
+     ↓
+⑨ DynamoDB: node_count=4, last_scale_time=now, last_scale_action=scale_up
+   CloudWatch: ScaleUpEvents+1, CurrentNodeCount=4, NodeJoinLatency=88000ms
+   SNS → Slack: "🟢 Scale-Up: CPU 74.3%, +1 node, now 4 total"
+     ↓
+⑩ Lock released (finally block)
+```
+
+### Scale-Down Flow (Async SSM Pattern)
+
+**Why async?** `kubectl drain` can take up to 300 seconds. Lambda timeout is 60s. Initiating drain via SSM (which returns in <5s) and checking result on the next invocation keeps Lambda well within timeout.
+
+**Invocation N:**
+```
+① No pending drains (DDB draining_instances = empty)
+② Lock acquired
+③ Metrics: CPU=22%, memory=41%, pending=0 (5th consecutive low reading)
+④ Decision: scale_down
+⑤ Select drain candidate:
+     - Exclude: nodes with StatefulSet pods
+     - Exclude: nodes with kube-system non-DaemonSet pods  
+     - Exclude: nodes with single-replica Deployment pods
+     - Choose: AZ with most workers (balance Multi-AZ)
+     - Tiebreak: fewest running pods (minimize disruption)
+     → Selected: "ip-10-0-12-47" (3 pods, AZ-1b, no critical pods)
+⑥ SSM send-command on master:
+     kubectl drain ip-10-0-12-47 --ignore-daemonsets \
+       --delete-emptydir-data --timeout=5m
+     Returns immediately with command_id="cmd-0xyz789"
+⑦ DynamoDB: draining_instances=["i-0abc999:cmd-0xyz789"]  (instance_id:command_id)
+⑧ Lock released
+```
+
+**Invocation N+1 (2 minutes later):**
+```
+① Pending drain found: i-0abc999 (command cmd-0xyz789)
+② SSM GetCommandInvocation → Status: Success, ExitCode: 0
+③ Validate: exit_status==0 AND "drained" in output → ✅ both true
+④ EC2 TerminateInstances: i-0abc999
+⑤ SSM on master: kubectl delete node ip-10-0-12-47
+⑥ DynamoDB: node_count=4, draining_instances=[], last_scale_action=scale_down
+⑦ Slack: "🔵 Scale-Down: CPU 22%, removed 1 node, now 4 total"
+⑧ Lock released
+```
+
+---
+
+## 5. State Management
+
+### DynamoDB Schema
 
 ```json
 {
-  "cluster_id": "node-fleet-cluster",
-  "current_node_count": 5,
-  "last_scale_time": "2026-01-25T10:30:00Z",
-  "last_scale_action": "scale_up",
-  "scaling_in_progress": false,
-  "lock_acquired_at": "2026-01-25T10:28:00Z",
-  "worker_node_ids": [
-    "i-0abc123",
-    "i-0def456",
-    "i-0ghi789",
-    "i-0jkl012",
-    "i-0mno345"
+  "cluster_id":          "node-fleet-prod",     // PK — partition key
+  "node_count":          4,                      // current worker count
+  "last_scale_time":     1706184600,             // Unix timestamp
+  "last_scale_action":   "scale_up",             // "scale_up" | "scale_down"
+  "last_scale_reason":   "CPU 74.3% [3/3]",      // human-readable
+  "scaling_in_progress": "true",                 // present=locked, absent=free
+  "lock_acquired_at":    1706184540,             // Unix timestamp
+  "lock_expiry":         1706184900,             // acquired_at + 360
+  "draining_instances":  ["i-0abc999"],          // async drain tracking
+  "metrics_history":     [                       // last 7 readings for window evaluation
+    {"ts": 1706184540, "cpu": 74.3, "mem": 68.1, "pending": 3},
+    {"ts": 1706184420, "cpu": 71.2, "mem": 66.4, "pending": 2}
   ],
-  "last_updated": "2026-01-25T10:30:15Z",
-  "config": {
-    "min_nodes": 2,
-    "max_nodes": 10,
-    "scale_up_cooldown": 300,
-    "scale_down_cooldown": 600,
-    "spot_percentage": 70
-  }
+  "ttl":                 1706271000              // DynamoDB auto-delete +24h
 }
 ```
 
-### Distributed Lock Mechanism
+### Lock State Machine
 
-**Problem**: Multiple Lambda invocations (if EventBridge misfires or manual trigger) could cause race conditions.
+```
+FREE STATE                  LOCKED STATE
+(no scaling_in_progress)    (scaling_in_progress = "true")
 
-**Solution**: DynamoDB conditional writes with TTL-based lock expiry.
+Lambda A arrives:           Lambda B arrives (concurrent):
+  ConditionExpression         ConditionCheckFailedException
+  → attribute_not_exists        → exit gracefully
+  → SUCCESS                       (no retry)
+  → begin scaling
 
-**Lock Acquisition**:
+Lambda A crashes:           Next Lambda arrives after 360s:
+  lock_expiry = acquired+360   lock_age > 360 → force release
+  → next Lambda clears it      → fresh acquire → proceed
+```
+
+### Async Drain State
+
+`draining_instances` list in DynamoDB tracks instances mid-drain across invocations:
 
 ```python
-# state_manager.py
-def acquire_lock(cluster_id, timeout=300):
+# Invocation N: store drain state
+state_manager.store_drain_state(instance_id, ssm_command_id)
+# → DDB: draining_instances = ["i-0abc999:cmd-0xyz789"]
+
+# Invocation N+1: check and complete
+for instance_id, command_id in state_manager.get_pending_drains():
+    result = ssm.get_command_invocation(InstanceId=instance_id, CommandId=command_id)
+    if result['StatusDetails'] == 'Success' and 'drained' in result['StandardOutputContent']:
+        ec2.terminate_instances(InstanceIds=[instance_id])
+        state_manager.clear_drain_instance(instance_id)
+```
+
+---
+
+## 6. Prometheus Configuration
+
+### prometheus.yml
+
+```yaml
+global:
+  scrape_interval: 15s        # Lambda polls every 2min, so 15s scrape is sufficient
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "node-fleet-prod"
+
+scrape_configs:
+  # System metrics: CPU, memory, disk I/O, network
+  - job_name: "node-exporter"
+    static_configs:            # static preferred over kubernetes_sd (no RBAC needed)
+      - targets:
+          - "10.0.11.10:9100"   # example — actual IPs updated on worker launch/terminate
+          - "10.0.12.10:9100"   # Lambda updates prometheus.yml via SSM on each scale event
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: node
+        replacement: '$1'
+
+  # Kubernetes object metrics: pod phases, node info, resource requests
+  - job_name: "kube-state-metrics"
+    static_configs:
+      - targets: ["kube-state-metrics.kube-system.svc.cluster.local:8080"]
+
+  # Application metrics: queue depth, request latency, error rate
+  - job_name: "demo-app"
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: demo-app
+        action: keep
+```
+
+**Why `static_configs` not `kubernetes_sd_configs` for node-exporter?**  
+`kubernetes_sd_configs` requires a ClusterRole that can `list` nodes. Without explicit RBAC, all targets show `0/0 (no data)`. Static configs with known private IPs are simpler and more reliable for a fixed-size infrastructure.
+
+### Storage & Access
+
+```bash
+# Prometheus startup flags
+--storage.tsdb.path=/var/lib/prometheus
+--storage.tsdb.retention.time=7d      # 7 days needed for predictive scaling
+--web.config.file=/etc/prometheus/web.yml    # basic auth
+--web.listen-address=0.0.0.0:9090
+
+# NodePort service exposes on :30090
+# Credentials from Secrets Manager: node-fleet/prometheus-auth
+```
+
+### PromQL Query Reference
+
+| Use Case | Query |
+|----------|-------|
+| CPU utilization | `avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100` |
+| Memory utilization | `(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100` |
+| Pending pods | `sum(kube_pod_status_phase{phase="Pending"})` |
+| Worker node count | `count(kube_node_info) - 1` (subtract master) |
+| Network receive MB/s | `sum(rate(node_network_receive_bytes_total{device!~"lo\|veth.*"}[5m])) / 1024 / 1024` |
+| Network transmit MB/s | `sum(rate(node_network_transmit_bytes_total{device!~"lo\|veth.*"}[5m])) / 1024 / 1024` |
+| Disk read MB/s | `sum(rate(node_disk_read_bytes_total[5m])) / 1024 / 1024` |
+| Disk write MB/s | `sum(rate(node_disk_written_bytes_total[5m])) / 1024 / 1024` |
+| API latency p95 | `histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) * 1000` |
+| Error rate % | `sum(rate(http_requests_total{status=~"5.."}[2m])) / sum(rate(http_requests_total[2m])) * 100` |
+| Queue depth | `app_queue_depth{queue="default"}` |
+
+---
+
+## 7. High Availability Design
+
+| Risk | Mitigation |
+|------|-----------|
+| Single Lambda invocation fails | EventBridge retries; next invocation (2min) picks up |
+| Lambda timeout during scaling | Lock auto-expires at 360s; next invocation force-clears |
+| Worker fails to join cluster | Polling detects NotReady after 5min → terminate + alert |
+| Spot interruption | EventBridge rule catches 2-min warning → cordon + drain → replacement |
+| Scale-down disrupts stateful workloads | Critical pod check before drain — StatefulSet/kube-system/single-replica protected |
+| Two Lambdas scale simultaneously | DynamoDB conditional write — only one gets the lock |
+| All workers terminate (min=0) | Min node floor (2) enforced at decision time — hard floor |
+| Master failure | Master is not autoscaled; manual recovery needed; state in DynamoDB survives |
+| AZ failure | Workers distributed across AZ-1a and AZ-1b; min 1 per AZ maintained |
+
+---
+
+## 8. Security Architecture
+
+All implementation details: [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md)
+
+### No Hardcoded Credentials
+
+```python
+# Correct pattern — Secrets Manager first, env var fallback, then fail
+def get_prometheus_credentials():
     try:
-        response = dynamodb.update_item(
-            TableName='node-fleet-dev-state',
-            Key={'cluster_id': cluster_id},
-            UpdateExpression='SET scaling_in_progress = :true, lock_acquired_at = :now',
-            ConditionExpression='attribute_not_exists(scaling_in_progress) OR scaling_in_progress = :false',
-            ExpressionAttributeValues={
-                ':true': True,
-                ':false': False,
-                ':now': datetime.utcnow().isoformat()
-            },
-            ReturnValues='ALL_NEW'
-        )
-        return True
-    except ClientError as e:
-        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-            # Lock already held, check if expired
-            state = get_state(cluster_id)
-            lock_age = (datetime.utcnow() - parse_iso(state['lock_acquired_at'])).seconds
-            if lock_age > timeout:
-                # Force release expired lock
-                release_lock(cluster_id, force=True)
-                return acquire_lock(cluster_id, timeout)
-            return False
-        raise
+        secret = secretsmanager.get_secret_value(SecretId='node-fleet/prometheus-auth')
+        data = json.loads(secret['SecretString'])
+        return data['username'], data['password']
+    except Exception:
+        username = os.environ.get('PROMETHEUS_USERNAME')
+        password = os.environ.get('PROMETHEUS_PASSWORD')
+        if not username or not password:
+            raise ValueError("Prometheus credentials not found in Secrets Manager or env vars")
+        return username, password
 ```
 
-**Lock Release**:
-
-```python
-def release_lock(cluster_id, force=False):
-    dynamodb.update_item(
-        TableName='node-fleet-dev-state',
-        Key={'cluster_id': cluster_id},
-        UpdateExpression='SET scaling_in_progress = :false REMOVE lock_acquired_at',
-        ExpressionAttributeValues={':false': False}
-    )
-```
-
----
-
-## Advanced Lambda Modules
-
-### 1. Predictive Scaling Module (`predictive_scaling.py`)
-
-**Purpose**: Analyze historical patterns and proactively scale before predicted load spikes.
-
-**Architecture**:
-
-```
-DynamoDB Metrics History Table (30-day TTL)
-    ↓
-[Hour-of-Day Pattern Analysis] → Predict next hour load
-    ↓
-[Proactive Scale Decision] → Scale 10 minutes before spike
-```
-
-**Key Methods**:
-
-```python
-def store_metrics(cluster_id, cpu, memory, timestamp):
-    """Store metrics in DynamoDB with 30-day TTL for historical analysis"""
-    dynamodb.put_item(
-        TableName='node-fleet-metrics-history',
-        Item={
-            'cluster_id': cluster_id,
-            'timestamp': timestamp,
-            'cpu_percent': cpu,
-            'memory_percent': memory,
-            'ttl': int(timestamp + 2592000)  # 30 days
-        }
-    )
-
-def predict_next_hour_load(cluster_id):
-    """Analyze 7-day hourof-day patterns"""
-    metrics = get_historical_metrics(cluster_id, days=7)
-    current_hour = datetime.utcnow().hour
-
-    # Group by hour-of-day
-    hourly_patterns = defaultdict(list)
-    for metric in metrics:
-        hour = parse_iso(metric['timestamp']).hour
-        hourly_patterns[hour].append(metric['cpu_percent'])
-
-    # Calculate average for current hour in past 7 days
-    predicted_cpu = sum(hourly_patterns[current_hour]) / len(hourly_patterns[current_hour])
-    return predicted_cpu
-
-def should_proactive_scale_up(cluster_id, current_cpu):
-    """Check if proactive scaling is needed"""
-    predicted_cpu = predict_next_hour_load(cluster_id)
-
-    # Scale up 10 minutes before predicted spike (at minute 50)
-    current_minute = datetime.utcnow().minute
-    if current_minute >= 50 and predicted_cpu > 70 and current_cpu < 60:
-        return True, predicted_cpu
-    return False, None
-```
-
-**Integration Point**: Called from `autoscaler.py` main handler at minute 50+ of each hour.
-
----
-
-### 2. Cost Optimizer Module (`cost_optimizer.py`)
-
-**Purpose**: Automated weekly cost analysis with actionable recommendations.
-
-**Architecture**:
-
-```
-[Weekly Trigger] → Analyze 7-day metrics
-    ↓
-[4 Analysis Functions]:
-  - check_underutilization()
-  - check_spot_usage()
-  - check_instance_rightsizing()
-  - check_idle_patterns()
-    ↓
-[Generate Recommendations] → Slack report
-```
-
-**Analysis Types**:
-
-```python
-def _check_underutilization(avg_cpu, avg_memory):
-    """Detect consistent low resource usage"""
-    if avg_cpu < 30 and avg_memory < 40:
-        return {
-            "type": "underutilization",
-            "severity": "medium",
-            "message": f"Cluster averaging {avg_cpu:.1f}% CPU, {avg_memory:.1f}% memory",
-            "action": "Reduce minimum nodes or increase application load",
-            "savings_percent": 15.0
-        }
-    return None
-
-def _check_spot_usage(current_spot_percent, target_spot_percent=70):
-    """Verify Spot instance usage meets target"""
-    if current_spot_percent < target_spot_percent - 10:
-        savings = (target_spot_percent - current_spot_percent) * 0.6
-        return {
-            "type": "spot_usage",
-            "severity": "high",
-            "message": f"Only {current_spot_percent}% Spot instances (target: {target_spot_percent}%)",
-            "action": f"Increase SPOT_PERCENTAGE to {target_spot_percent}%",
-            "savings_percent": savings
-        }
-    return None
-
-def _check_instance_rightsizing(current_instance_type, avg_cpu, avg_memory):
-    """Suggest smaller instance types if resources unused"""
-    if current_instance_type == "t3.medium" and avg_cpu < 25 and avg_memory < 35:
-        return {
-            "type": "rightsizing",
-            "severity": "medium",
-            "message": f"t3.medium oversized for {avg_cpu:.1f}% CPU usage",
-            "action": "Consider switching to t3.small",
-            "savings_percent": 50.0  # t3.small is 50% cheaper
-        }
-    return None
-```
-
-**Integration Point**: Runs every Sunday at 12:00 UTC (configured in `autoscaler.py` lines 290-310).
-
----
-
-### 3. Custom Metrics Module (`custom_metrics.py`)
-
-**Purpose**: Application-level scaling triggers beyond CPU/memory.
-
-**Architecture**:
-
-```
-[Prometheus PromQL Queries] → Get app metrics
-    ↓
-[Evaluate Thresholds]:
-  - Queue depth > 100
-  - API p95 latency > 500ms
-  - Request rate > 1000 req/s
-    ↓
-[Return scale_needed boolean + reasons]
-```
-
-**Supported Metrics**:
-
-```python
-def get_queue_depth(queue_name: str = "default"):
-    """Query application queue depth from Prometheus"""
-    query = f'app_queue_depth{{queue="{queue_name}"}}'
-    result = execute_promql(query)
-    return int(result[0]['value'][1]) if result else None
-
-def get_api_latency_p95():
-    """Get API latency 95th percentile"""
-    query = 'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))'
-    result = execute_promql(query)
-    return float(result[0]['value'][1]) * 1000  # Convert to ms
-
-def get_request_rate():
-    """Get current request rate"""
-    query = 'sum(rate(http_requests_total[1m]))'
-    result = execute_promql(query)
-    return float(result[0]['value'][1])
-
-def evaluate(thresholds):
-    """Evaluate all custom metrics and return scaling decision"""
-    reasons = []
-
-    queue_depth = get_queue_depth()
-    if queue_depth > thresholds['queue_depth']:
-        reasons.append(f"Queue depth: {queue_depth} > {thresholds['queue_depth']}")
-
-    latency = get_api_latency_p95()
-    if latency > thresholds['api_latency_p95']:
-        reasons.append(f"API p95 latency: {latency:.1f}ms > {thresholds['api_latency_p95']}ms")
-
-    rate = get_request_rate()
-    if rate > thresholds['request_rate']:
-        reasons.append(f"Request rate: {rate:.1f} req/s > {thresholds['request_rate']}")
-
-    return len(reasons) > 0, reasons
-```
-
-**Integration Point**: Called from `scaling_decision.py` evaluate() method after CPU/memory checks.
-
----
-
-### 4. Multi-AZ Helper Module (`multi_az_helper.py`)
-
-**Purpose**: Balance worker distribution across availability zones.
-
-**Architecture**:
-
-```
-[Get Existing Instances] → Count per AZ
-    ↓
-[Select Least-Filled AZ] → Return subnet_id
-```
-
-**Key Logic**:
-
-```python
-def select_subnet_for_new_instance(existing_instances, available_subnets):
-    """
-    Smart subnet selection for AZ load balancing
-
-    Example: If AZ-a has 3 workers and AZ-b has 2, select AZ-b
-    """
-    subnet_counts = {subnet_id: 0 for subnet_id in available_subnets}
-
-    for instance in existing_instances:
-        subnet_id = instance.get('SubnetId')
-        if subnet_id in subnet_counts:
-            subnet_counts[subnet_id] += 1
-
-    # Return subnet with fewest instances
-    return min(subnet_counts, key=subnet_counts.get)
-```
-
-**Integration Point**: Called from `ec2_manager.py` launch_instances() method.
-
----
-
-### 5. Spot Instance Helper Module (`spot_instance_helper.py`)
-
-**Purpose**: Maintain 70/30 Spot/On-Demand ratio dynamically.
-
-**Architecture**:
-
-```
-[Current Mix] → Calculate ideal Spot/On-Demand split
-    ↓
-[Prioritize Spot] → Add Spot first, On-Demand as fallback
-```
-
-**Key Logic**:
-
-```python
-def calculate_spot_ondemand_mix(current_nodes, desired_nodes,
-                                existing_spot_count, existing_ondemand_count):
-    """
-    Maintain target 70/30 Spot/On-Demand ratio
-
-    Example: If scaling from 4 to 6 nodes with current mix of 2 Spot + 2 On-Demand:
-      - Target: 4.2 Spot (70% of 6) → Add 2 Spot, 0 On-Demand
-    """
-    target_spot_ratio = 0.70
-    nodes_to_add = desired_nodes - current_nodes
-
-    ideal_total_spot = int(desired_nodes * target_spot_ratio)
-    ideal_total_ondemand = desired_nodes - ideal_total_spot
-
-    spot_to_add = max(0, ideal_total_spot - existing_spot_count)
-    ondemand_to_add = max(0, ideal_total_ondemand - existing_ondemand_count)
-
-    # Ensure we don't exceed desired total
-    if spot_to_add + ondemand_to_add > nodes_to_add:
-        spot_to_add = min(spot_to_add, nodes_to_add)
-        ondemand_to_add = nodes_to_add - spot_to_add
-
-    return {'spot': spot_to_add, 'ondemand': ondemand_to_add}
-```
-
-**Integration Point**: Called from `ec2_manager.py` before launching instances.
-
----
-
-### 6. Audit Logger Module (`audit_logger.py`)
-
-**Purpose**: Comprehensive event logging for compliance and debugging.
-
-**Log Schema**:
+### Lambda IAM (Least Privilege)
 
 ```json
 {
-  "timestamp": "2026-01-25T10:30:15Z",
-  "event_type": "scale_up",
-  "cluster_id": "node-fleet-cluster",
-  "user": "lambda:autoscaler",
-  "details": {
-    "reason": "CPU threshold exceeded (82.5% > 70%)",
-    "nodes_added": 2,
-    "new_total": 5,
-    "instance_ids": ["i-0abc123", "i-0def456"],
-    "metrics": { "cpu": 82.5, "memory": 65.3 }
-  }
+  "EC2": "RunInstances + TerminateInstances + DescribeInstances scoped to tag:Project=node-fleet",
+  "DynamoDB": "PutItem/GetItem/UpdateItem/DeleteItem scoped to table ARN",
+  "SecretsManager": "GetSecretValue scoped to node-fleet/* paths only",
+  "SSM": "SendCommand + GetCommandInvocation (for drain)",
+  "SNS": "Publish scoped to topic ARN",
+  "CloudWatch": "PutMetricData (custom namespace only)",
+  "SQS": "SendMessage scoped to DLQ ARN (for Lambda failures)",
+  "VPC": "CreateNetworkInterface + DeleteNetworkInterface (required for VPC Lambda)"
 }
 ```
 
-**Integration Point**: Called from `autoscaler.py` after every scaling action.
-
----
-
-### 7. Dynamic Scheduler Module (`dynamic_scheduler.py`)
-
-**Purpose**: Time-aware threshold adjustments for predictable traffic patterns.
-
-**Architecture**:
-
-```
-[Get Current Hour] → Map to traffic tier
-    ↓
-[Adjust Thresholds]:
-  - Peak hours (9 AM - 9 PM): Lower thresholds → faster scale-up
-  - Off-peak (9 PM - 9 AM): Higher thresholds → reduce cost
-```
-
-**Key Logic**:
-
-```python
-def get_time_aware_thresholds(current_hour):
-    """
-    Adjust scaling thresholds based on time of day
-
-    Peak hours: More aggressive scaling (lower CPU threshold)
-    Off-peak: More conservative (higher threshold)
-    """
-    if 9 <= current_hour < 21:  # 9 AM - 9 PM
-        return {
-            "cpu_scale_up": 65.0,  # vs 70.0 default
-            "cpu_scale_down": 35.0,  # vs 30.0 default
-            "memory_scale_up": 70.0
-        }
-    else:  # 9 PM - 9 AM
-        return {
-            "cpu_scale_up": 75.0,  # Higher threshold to avoid over-scaling
-            "cpu_scale_down": 25.0,
-            "memory_scale_up": 75.0
-        }
-```
-
-**Integration Point**: Called from `scaling_decision.py` before threshold evaluation.
-
----
-
-## Production Infrastructure Components
-
-### Monitoring Stack
-
-#### Prometheus Deployment
-
-**Components**:
-
-- **Prometheus Server**: Port 30090 (NodePort for Lambda access)
-- **Node Exporter**: Per-node metrics (CPU, memory, disk, network)
-- **Kube-State-Metrics**: K8s object metrics (pods, deployments, nodes)
-- **Cost Exporter**: Custom AWS cost tracking (`monitoring/cost_exporter.py`)
-
-**Key Metrics Exported**:
-
-```python
-# Cost Exporter Metrics
-aws_ec2_instance_cost_per_hour{instance_id, instance_type, lifecycle, az}
-aws_cluster_total_cost_hourly{cluster}
-aws_cluster_total_cost_monthly{cluster}
-aws_cost_by_lifecycle{lifecycle}  # spot vs on-demand
-aws_potential_savings_hourly{optimization_type}
-```
-
-**Deployment**: Managed by GitOps (`gitops/infrastructure/prometheus-deployment.yaml`)
-
----
-
-#### Grafana Dashboards
-
-**Three Pre-Built Dashboards** (`monitoring/grafana-dashboards/`):
-
-1. **cluster-overview.json**:
-   - Real-time CPU/Memory gauges
-   - Node count timeline with scale events
-   - Per-node resource table
-   - Network I/O and disk usage graphs
-
-2. **autoscaler-performance.json**:
-   - Scaling events timeline (scale-up/down annotations)
-   - Trigger breakdown (CPU/Memory/Pending/Custom/Predictive)
-   - Node join latency histogram
-   - Lambda execution time
-   - Predictive accuracy graph
-
-3. **cost-tracking.json** [BONUS]:
-   - Hourly/daily/monthly cost trends
-   - Spot vs On-Demand mix (pie chart)
-   - Cost per instance type (bar chart)
-   - Savings percentage vs all On-Demand
-   - Budget status and optimization alerts
-
-**Access**: Port 30030 (NodePort), default credentials in Secrets Manager
-
----
-
-#### CloudWatch Alarms
-
-**Scale-Up Alarm Configuration**:
-
-![Scale Up Alarm](alarms/Scale%20Up.png)
-
-**Scale-Down Alarm Configuration**:
-
-![Scale Down Alarm](alarms/Scale%20Down.png)
-
-These alarms trigger SNS notifications for critical scaling events, providing real-time visibility into autoscaling operations.
-
----
-
-### GitOps with FluxCD
-
-**Purpose**: Declarative, Git-driven Kubernetes deployment management
-
-**Architecture**:
-
-```
-[Git Repository: gitops/] → [FluxCD polls every 1 min] → [Auto-apply to K3s]
-```
-
-**Directory Structure**:
-
-```
-gitops/
-├── clusters/production/     # Cluster-specific kustomizations
-│   ├── apps.yaml            # Application deployments
-│   ├── infrastructure.yaml  # Prometheus, Grafana
-│   ├── monitoring.yaml      # Exporters, alerts
-│   └── image-automation.yaml
-├── apps/demo-app/           # Demo Flask application
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   └── kustomization.yaml
-├── infrastructure/          # Core infrastructure
-│   ├── prometheus-deployment.yaml
-│   ├── prometheus-basic-auth.yaml
-│   └── grafana.yaml
-└── monitoring/              # Monitoring components
-    ├── node-exporter.yaml
-    ├── kube-state-metrics.yaml
-    ├── alerts.yaml
-    └── cost-exporter.yaml
-```
-
-**Management Scripts** (`gitops/`):
-
-- `install-flux.sh`: Bootstrap FluxCD to cluster
-- `check-status.sh`: Verify FluxCD health
-- `reconcile.sh`: Force immediate sync
-- `uninstall-flux.sh`: Remove FluxCD
-
-**Key Features**:
-
-- ✅ Auto-sync every 1 minute from Git
-- ✅ Rollback via `git revert` (FluxCD auto-reverts cluster)
-- ✅ Complete audit trail in Git history
-- ✅ Dependency management (infra before apps)
-- ✅ Image automation (auto-update on new tags)
-
----
-
-### Deployment Automation
-
-**Scripts Location**: `scripts/` directory
-
-#### deploy-cluster.sh
-
-One-command full cluster deployment:
-
-```bash
-cd pulumi && pulumi up --yes
-# Extract master IP, wait for cluster ready
-# Deploy FluxCD, monitoring stack
-```
-
-#### deploy_monitoring.sh
-
-Deploy Prometheus + Grafana + Cost Exporter:
-
-```bash
-kubectl apply -f monitoring/prometheus/
-kubectl apply -f monitoring/cost-exporter-deployment.yaml
-kubectl wait --for=condition=ready pod -l app=prometheus
-```
-
-#### verify-autoscaler-requirements.sh
-
-Comprehensive Lambda compliance check:
-
-- ✅ Runtime (Python 3.11)
-- ✅ Timeout (60s), Memory (256MB)
-- ✅ VPC attachment
-- ✅ Environment variables
-- ✅ IAM permissions
-- ✅ EventBridge trigger (2 min)
-- ✅ DynamoDB tables exist
-- ✅ Secrets Manager secrets present
-
-**Output**: Pass/Fail report with detailed diagnostics
-
-#### configure-grafana.sh
-
-Auto-configure Grafana data source and import 3 dashboards
-
----
-
-## Security Architecture
-
-### Secrets Management
-
-**AWS Secrets Manager Secrets**:
-
-1. **node-fleet/k3s-token**
-   - Value: K3s join token from master node (`/var/lib/rancher/k3s/server/node-token`)
-   - Encryption: AWS-managed KMS key
-   - Access: EC2 worker instance profile, Lambda role
-
-2. **node-fleet/slack-webhook**
-   - Value: `https://hooks.slack.com/services/T.../B.../...`
-   - Encryption: AWS-managed KMS key
-   - Access: Lambda role (for SNS → Slack notifier)
-
-### IAM Roles & Policies
-
-**Lambda Execution Role** (`node-fleet-lambda-autoscaler-role`):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:RunInstances",
-        "ec2:TerminateInstances",
-        "ec2:DescribeInstances",
-        "ec2:DescribeInstanceStatus",
-        "ec2:CreateTags"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "ec2:Region": "ap-southeast-1"
-        }
-      }
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "dynamodb:GetItem",
-        "dynamodb:PutItem",
-        "dynamodb:UpdateItem",
-        "dynamodb:Query"
-      ],
-      "Resource": [
-        "arn:aws:dynamodb:ap-southeast-1:*:table/node-fleet-dev-state",
-        "arn:aws:dynamodb:ap-southeast-1:*:table/node-fleet-dev-metrics-history"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": [
-        "arn:aws:secretsmanager:ap-southeast-1:*:secret:node-fleet/k3s-token-*",
-        "arn:aws:secretsmanager:ap-southeast-1:*:secret:node-fleet/slack-webhook-*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["sns:Publish"],
-      "Resource": "arn:aws:sns:ap-southeast-1:*:autoscaler-notifications"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/lambda/node-fleet-dev-autoscaler:*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:CreateNetworkInterface",
-        "ec2:DescribeNetworkInterfaces",
-        "ec2:DeleteNetworkInterface",
-        "ec2:AssignPrivateIpAddresses",
-        "ec2:UnassignPrivateIpAddresses"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["cloudwatch:PutMetricData"],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "cloudwatch:namespace": "node-fleet"
-        }
-      }
-    }
-  ]
-}
-```
-
-**EC2 Master Instance Role** (`node-fleet-master-instance-role`):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": "arn:aws:secretsmanager:ap-southeast-1:*:secret:node-fleet/k3s-token-*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/ec2/master:*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["cloudwatch:PutMetricData"],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-**EC2 Worker Instance Role** (`node-fleet-worker-instance-role`):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": "arn:aws:secretsmanager:ap-southeast-1:*:secret:node-fleet/k3s-token-*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["ec2:DescribeInstances", "ec2:DescribeTags"],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/ec2/worker:*"
-    }
-  ]
-}
-```
-
----
-
-## High Availability Design
-
-### Multi-AZ Worker Distribution
-
-**Strategy**: Maintain balanced worker distribution across 2 availability zones.
-
-**Implementation**:
-
-1. **Scale-Up**: Round-robin subnet selection (Private-1a, Private-1b alternating)
-2. **Scale-Down**: Remove node from AZ with highest count
-3. **Constraint**: Minimum 1 worker per AZ (if total workers ≥ 2)
-
-**Example Distribution**:
-
-| Total Workers | AZ-1a Workers | AZ-1b Workers |
-| ------------- | ------------- | ------------- |
-| 2 (minimum)   | 1             | 1             |
-| 3             | 2             | 1             |
-| 4             | 2             | 2             |
-| 5             | 3             | 2             |
-| 10 (maximum)  | 5             | 5             |
-
-### Spot Instance Resilience
-
-**Configuration**: 70% Spot, 30% On-Demand
-
-**Interruption Handling**:
-
-1. **EventBridge Rule**: Subscribe to EC2 Spot Interruption Warnings (2-minute notice)
-2. **Handler Lambda**: Triggered on interruption warning
-   - Cordons node immediately (`kubectl cordon`)
-   - Drains pods to other nodes
-   - Updates DynamoDB to exclude from scale-down candidates
-3. **Replacement**: Next autoscaler cycle launches On-Demand replacement if needed
-
-**Fallback**: If Spot capacity unavailable, Lambda automatically falls back to On-Demand instances.
-
-### Master Node Resilience
-
-**Current State**: Single master node (acceptable for development/testing)
-
-**Production Recommendation**:
-
-- 3-node master HA cluster (K3s embedded etcd)
-- External load balancer for API server (AWS NLB)
-- Automated master failover (Keepalived + VIP)
-
----
-
-## Component Interactions
-
-### Lambda → Prometheus
-
-**Connection**: Lambda ENI in private subnet → Master node private IP port 30090
-
-**Query Example**:
-
-```bash
-curl -s "http://10.0.11.50:30090/api/v1/query?query=avg(rate(node_cpu_seconds_total{mode!='idle'}[5m]))*100"
-```
-
-**Error Handling**:
-
-- Retry 2x with 5-second backoff
-- If Prometheus unavailable: Use cached metrics from DynamoDB
-- If cache stale (>10 min): Abort scaling, alert to Slack
-
-### Lambda → K3s API (via SSH)
-
-**Why SSH instead of direct API**: K3s API server (port 6443) not exposed to Lambda for security
-
-**Commands Executed**:
-
-```bash
-# Get node list
-kubectl get nodes -o json
-
-# Drain node before termination
-kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data --timeout=5m
-
-# Check node Ready status
-kubectl get node <node-name> -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-```
-
-### EC2 UserData → Secrets Manager
-
-**Worker Join Script** (`/var/lib/cloud/instance/user-data.txt`):
-
-```bash
-#!/bin/bash
-set -e
-
-# Retrieve K3s token from Secrets Manager
-TOKEN=$(aws secretsmanager get-secret-value \
-  --secret-id node-fleet/k3s-token \
-  --region ap-southeast-1 \
-  --query SecretString \
-  --output text)
-
-# Resolve master IP via EC2 tags
-MASTER_IP=$(aws ec2 describe-instances \
-  --region ap-southeast-1 \
-  --filters "Name=tag:Role,Values=k3s-master" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-  --output text)
-
-# Install K3s agent
-curl -sfL https://get.k3s.io | K3S_URL=https://${MASTER_IP}:6443 K3S_TOKEN=${TOKEN} sh -
-
-# Verify join success
-systemctl status k3s-agent
-```
-
----
-
-## Scalability Considerations
-
-### Current Limits
-
-| Resource             | Limit  | Justification                                       |
-| -------------------- | ------ | --------------------------------------------------- |
-| Max Workers          | 10     | AWS quota limit + cost control                      |
-| Min Workers          | 2      | High availability requirement                       |
-| Lambda Concurrency   | 1      | DynamoDB lock prevents concurrent scaling           |
-| Prometheus Retention | 7 days | Sufficient for troubleshooting + predictive scaling |
-
-### Scaling Beyond 10 Nodes
-
-To support larger clusters:
-
-1. **Request AWS EC2 Quota Increase**: vCPU limit for t3 instances
-2. **Multi-Region**: Deploy autoscaler in multiple regions with separate DynamoDB tables
-3. **Master HA**: Upgrade to 3-master cluster with external load balancer
-4. **Prometheus Federation**: Deploy Prometheus per 20-node group, federate to central instance
-
----
-
-## Disaster Recovery
-
-### Failure Scenarios & Recovery
-
-| Scenario                      | Impact                            | Recovery                                                       |
-| ----------------------------- | --------------------------------- | -------------------------------------------------------------- |
-| **Lambda Fails**              | No scaling for 2 min              | EventBridge retriggers next cycle                              |
-| **DynamoDB Outage**           | No scaling, uses last known state | Manual intervention via EC2 console                            |
-| **Prometheus Down**           | Uses cached metrics (10 min)      | Auto-restarts (K8s deployment), alerts to Slack                |
-| **Master Node Failure**       | Cluster unavailable               | Manual: Launch new master, restore from etcd backup            |
-| **All Workers Terminated**    | Service down                      | Autoscaler launches MIN_NODES (2) workers within 3 min         |
-| **Spot Interruptions (Mass)** | 2-min warning                     | EventBridge triggers drain, autoscaler replaces with On-Demand |
-
-### Backup Strategy
-
-**DynamoDB**: Point-in-time recovery enabled (35-day retention)
-
-**K3s etcd**: Automated backups to S3 every 6 hours (not implemented in current version, production recommendation)
-
----
-
-## Cost Breakdown
-
-| Component                                        | Monthly Cost (BDT) |
-| ------------------------------------------------ | ------------------ |
-| EC2 t3.medium Master (24/7)                      | 15,000             |
-| EC2 t3.small Workers (avg 4 nodes, 12h/day peak) | 24,000             |
-| Spot Discount (70% of workers)                   | -12,000            |
-| Lambda (15,000 invocations @ 60s)                | 500                |
-| DynamoDB On-Demand                               | 200                |
-| NAT Gateway (2 AZs)                              | 8,000              |
-| CloudWatch Logs & Metrics                        | 300                |
-| Secrets Manager                                  | 200                |
-| Data Transfer                                    | 1,000              |
-| **Total**                                        | **~60,000 BDT**    |
-
-**Savings vs. Baseline (120,000 BDT)**: **50%** 🎉
-
----
-
-_For operational runbooks and troubleshooting, see [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md)._
+### Encryption at Rest
+
+| Resource | Encryption |
+|----------|-----------|
+| EBS volumes (all) | AWS-managed KMS |
+| DynamoDB | Server-side encryption (SSE) |
+| Secrets Manager | AES-256 |
+| S3 (Lambda artifacts) | SSE-S3 |
+| K3s API (in-transit) | TLS 1.3 — all kubectl + agent-join traffic encrypted |
+
+### Secrets Manager Paths
+
+| Path | Contents |
+|------|---------|
+| `node-fleet/k3s-token` | K3s server join token |
+| `node-fleet/prometheus-auth` | `{"username":"...", "password":"..."}` |
+| `node-fleet/ssh-key` | Master node SSH private key (PEM) |
+| `node-fleet/slack-webhook` | Slack incoming webhook URL |

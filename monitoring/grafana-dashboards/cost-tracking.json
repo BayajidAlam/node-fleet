@@ -102,7 +102,7 @@
     },
     {
       "id": 4,
-      "title": "Cost Savings vs Always-On",
+      "title": "Cost Savings vs Always-On (10×t3.medium)",
       "type": "stat",
       "datasource": "Prometheus",
       "gridPos": {
@@ -113,14 +113,24 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0208 * 10))) * 100",
-          "refId": "A"
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0464 * 10))) * 100",
+          "refId": "A",
+          "legendFormat": "Savings %"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "decimals": 1
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0,  "color": "red"},
+              {"value": 20, "color": "yellow"},
+              {"value": 40, "color": "green"},
+              {"value": 54, "color": "blue"}
+            ]
+          }
         }
       }
     },
@@ -142,9 +152,14 @@
           "refId": "A"
         },
         {
-          "expr": "0.0208 * 10",
-          "legendFormat": "Max Cost (10x t3.small on-demand)",
+          "expr": "0.0464 * 10",
+          "legendFormat": "Always-On Baseline (10×t3.medium on-demand)",
           "refId": "B"
+        },
+        {
+          "expr": "aws_spot_savings_hourly{cluster=\"node-fleet\"}",
+          "legendFormat": "Spot Savings/Hour",
+          "refId": "C"
         }
       ],
       "yaxes": [

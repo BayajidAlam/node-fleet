@@ -77,7 +77,8 @@ class CostOptimizer:
         avg_memory = self._get_average_metric('ClusterMemoryUtilization', hours=6)
         
         if avg_cpu and avg_cpu < 20 and avg_memory and avg_memory < 30:
-            # Cluster is significantly underutilized
+            if current_nodes == 0:
+                return None
             recommended_nodes = max(2, int(current_nodes * 0.7))
             savings = ((current_nodes - recommended_nodes) / current_nodes) * 100
             
@@ -114,20 +115,23 @@ class CostOptimizer:
             
             if total == 0:
                 return None
-            
+
             spot_percentage = (spot_count / total) * 100
-            
+
             if spot_percentage < 60:
-                # Low spot usage
                 target_spot = 70
-                additional_savings = (target_spot - spot_percentage) * 0.65  # Spot saves ~65%
-                
+                # Additional savings %: converting (target - current)% of fleet from on-demand to spot
+                # Each converted instance saves SPOT_DISCOUNT (65%) of its on-demand cost
+                # As % of total fleet cost = (delta_fraction) * SPOT_DISCOUNT * 100
+                delta_fraction = (target_spot - spot_percentage) / 100
+                savings_percent = round(delta_fraction * 65.0, 1)
+
                 return {
                     "type": "spot_instances",
                     "severity": "medium",
                     "message": f"Only {spot_percentage:.1f}% of workers are spot instances",
                     "action": f"Increase SPOT_PERCENTAGE to {target_spot}% for better cost efficiency",
-                    "savings_percent": additional_savings,
+                    "savings_percent": savings_percent,
                     "impact": "Increased interruption risk (mitigated by auto-replacement)"
                 }
             

@@ -129,24 +129,55 @@ scaling_cost_impact = Histogram(
 
 # EC2 pricing (ap-southeast-1, on-demand per hour)
 EC2_PRICING = {
+    # T3
     't3.micro': 0.0116,
     't3.small': 0.0232,
     't3.medium': 0.0464,
     't3.large': 0.0928,
     't3.xlarge': 0.1856,
     't3.2xlarge': 0.3712,
+    # T3a
     't3a.micro': 0.0104,
     't3a.small': 0.0208,
     't3a.medium': 0.0416,
     't3a.large': 0.0832,
     't3a.xlarge': 0.1664,
     't3a.2xlarge': 0.3328,
+    # T4g (Graviton2)
+    't4g.micro': 0.0084,
+    't4g.small': 0.0168,
+    't4g.medium': 0.0336,
+    't4g.large': 0.0672,
+    't4g.xlarge': 0.1344,
+    't4g.2xlarge': 0.2688,
+    # M5
     'm5.large': 0.107,
     'm5.xlarge': 0.214,
     'm5.2xlarge': 0.428,
+    # M5a
+    'm5a.large': 0.096,
+    'm5a.xlarge': 0.192,
+    'm5a.2xlarge': 0.384,
+    # M6i
+    'm6i.large': 0.108,
+    'm6i.xlarge': 0.216,
+    'm6i.2xlarge': 0.432,
+    # C5
     'c5.large': 0.094,
     'c5.xlarge': 0.188,
     'c5.2xlarge': 0.376,
+    # C5a
+    'c5a.large': 0.0848,
+    'c5a.xlarge': 0.1696,
+    'c5a.2xlarge': 0.3392,
+    # C6i
+    'c6i.large': 0.0952,
+    'c6i.xlarge': 0.1904,
+    'c6i.2xlarge': 0.3808,
+    # R6i (memory-optimised)
+    'r6i.large': 0.144,
+    'r6i.xlarge': 0.288,
+    'r6i.2xlarge': 0.576,
 }
 
 # Instance type specifications (vCPUs, Memory GB)
@@ -163,12 +194,33 @@ INSTANCE_SPECS = {
     't3a.large': (2, 8),
     't3a.xlarge': (4, 16),
     't3a.2xlarge': (8, 32),
+    't4g.micro': (2, 1),
+    't4g.small': (2, 2),
+    't4g.medium': (2, 4),
+    't4g.large': (2, 8),
+    't4g.xlarge': (4, 16),
+    't4g.2xlarge': (8, 32),
     'm5.large': (2, 8),
     'm5.xlarge': (4, 16),
     'm5.2xlarge': (8, 32),
+    'm5a.large': (2, 8),
+    'm5a.xlarge': (4, 16),
+    'm5a.2xlarge': (8, 32),
+    'm6i.large': (2, 8),
+    'm6i.xlarge': (4, 16),
+    'm6i.2xlarge': (8, 32),
     'c5.large': (2, 4),
     'c5.xlarge': (4, 8),
     'c5.2xlarge': (8, 16),
+    'c5a.large': (2, 4),
+    'c5a.xlarge': (4, 8),
+    'c5a.2xlarge': (8, 16),
+    'c6i.large': (2, 4),
+    'c6i.xlarge': (4, 8),
+    'c6i.2xlarge': (8, 16),
+    'r6i.large': (2, 16),
+    'r6i.xlarge': (4, 32),
+    'r6i.2xlarge': (8, 64),
 }
 
 # Spot pricing is approximately 60-70% cheaper
@@ -193,26 +245,38 @@ class EnhancedCostExporter:
         self.previous_timestamp = datetime.now()
     
     def get_running_instances(self) -> List[Dict]:
-        """Get all running instances for the cluster"""
-        response = self.ec2_client.describe_instances(
-            Filters=[
-                {'Name': 'tag:Project', 'Values': [self.cluster_name]},
-                {'Name': 'instance-state-name', 'Values': ['running']}
-            ]
-        )
-        
+        """Get all running cluster instances — tries Project tag first, falls back to ManagedBy tag."""
         instances = []
-        for reservation in response['Reservations']:
-            instances.extend(reservation['Instances'])
-        
+        for filters in [
+            [
+                {'Name': 'tag:Project', 'Values': [self.cluster_name]},
+                {'Name': 'instance-state-name', 'Values': ['running']},
+            ],
+            [
+                {'Name': 'tag:ManagedBy', 'Values': ['autoscaler']},
+                {'Name': 'instance-state-name', 'Values': ['running']},
+            ],
+        ]:
+            response = self.ec2_client.describe_instances(Filters=filters)
+            for reservation in response['Reservations']:
+                instances.extend(reservation['Instances'])
+            if instances:
+                break
         return instances
-    
+
     def get_pod_count(self) -> int:
-        """Get total number of running pods (simulated for now)"""
-        # In production, this would query Kubernetes API
-        # For now, estimate based on instances (avg 10 pods per instance)
-        instances = self.get_running_instances()
-        return len(instances) * 10
+        """Get actual running pod count from Kubernetes in-cluster API. Falls back to estimate."""
+        try:
+            from kubernetes import client, config
+            config.load_incluster_config()
+            v1 = client.CoreV1Api()
+            pods = v1.list_pod_for_all_namespaces(field_selector="status.phase=Running")
+            return len(pods.items)
+        except Exception as e:
+            instances = self.get_running_instances()
+            estimated = len(instances) * 10
+            print(f"Warning: K8s pod count failed ({e}), estimating {estimated}")
+            return estimated
     
     def calculate_instance_cost(self, instance: Dict) -> float:
         """Calculate hourly cost for an instance"""

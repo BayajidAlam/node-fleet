@@ -28,7 +28,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              pip install boto3 prometheus-client
+              pip install boto3 prometheus-client kubernetes
               python /app/cost-exporter.py
           ports:
             - containerPort: 9100

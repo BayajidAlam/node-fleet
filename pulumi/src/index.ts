@@ -45,6 +45,7 @@ import {
   pendingPodsAlarmArn,
 } from "./cloudwatch-alarms";
 import { lambdaArtifactsBucket } from "./s3";
+import { demoAppRepo, demoAppRepoUrl } from "./ecr";
 
 // Export all infrastructure outputs
 export const vpcId = vpc.id;
@@ -79,6 +80,8 @@ export const autoscalerFunctionArn = autoscalerLambdaArn;
 export const autoscalerFunctionName = autoscalerLambda.name;
 export const autoscalerScheduleRuleName = autoscalerScheduleName;
 export const lambdaArtifactsBucketName = lambdaArtifactsBucket.id;
+export const ecrRepositoryUrl = demoAppRepoUrl;
+export const ecrRepositoryName = demoAppRepo.name;
 
 // CloudWatch alarm exports
 export const alarms = {

@@ -13,7 +13,7 @@ import sys
 import time
 import logging
 import boto3
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from multi_az_helper import select_subnet_for_new_instance
 
 logger = logging.getLogger()
@@ -162,6 +162,12 @@ class EC2Manager:
         for instance in targets:
             instance_id = instance["InstanceId"]
             node_name = instance.get("PrivateDnsName", instance_id)
+
+            # Guard: skip nodes hosting StatefulSet pods, single-replica deployment pods, or kube-system non-DaemonSet pods
+            has_critical, critical_reason = self._check_critical_pods(master_instance_id, node_name)
+            if has_critical:
+                logger.warning(f"Skipping drain for {instance_id} (node: {node_name}) — critical pods present: {critical_reason}")
+                continue
 
             try:
                 command_id = self._send_drain_command(master_instance_id, node_name)
@@ -444,6 +450,58 @@ class EC2Manager:
         if not reservations or not reservations[0].get("Instances"):
             raise RuntimeError("K3s master instance not found via tag Role=k3s-master")
         return reservations[0]["Instances"][0]["InstanceId"]
+
+    def _check_critical_pods(self, master_instance_id: str, node_name: str) -> Tuple[bool, str]:
+        """
+        Check if node hosts critical pods that must not be drained.
+        Critical = StatefulSet pods, single-replica Deployment pods, kube-system non-DaemonSet pods.
+        Fail-safe: returns (True, reason) if check fails, preventing unsafe drain.
+
+        Returns:
+            (has_critical, reason) — True means skip this node.
+        """
+        check_cmd = (
+            f"export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; "
+            f"NODE='{node_name}'; "
+            # StatefulSet pods on this node
+            "SS=$(kubectl get pods --all-namespaces --field-selector spec.nodeName=$NODE "
+            "-o jsonpath='{range .items[*]}{.metadata.ownerReferences[0].kind}{\"\\n\"}{end}' "
+            "2>/dev/null | grep -c '^StatefulSet$' || echo 0); "
+            # kube-system non-DaemonSet pods on this node (CoreDNS, metrics-server)
+            "KS=$(kubectl get pods -n kube-system --field-selector spec.nodeName=$NODE "
+            "-o jsonpath='{range .items[*]}{.metadata.ownerReferences[0].kind}{\"\\n\"}{end}' "
+            "2>/dev/null | grep -vc '^DaemonSet$' || echo 0); "
+            # Single-replica Deployments cluster-wide (any namespace)
+            "SR=$(kubectl get deployments --all-namespaces "
+            "-o jsonpath='{range .items[*]}{.spec.replicas}{\"\\n\"}{end}' "
+            "2>/dev/null | grep -c '^1$' || echo 0); "
+            "[ $((${SS:-0}+${KS:-0}+${SR:-0})) -gt 0 ] "
+            "&& echo \"CRITICAL_PODS_FOUND:statefulset=${SS},kube-system-non-ds=${KS},single-replica-deployments=${SR}\" "
+            "|| echo SAFE_TO_DRAIN"
+        )
+        try:
+            resp = self.ssm.send_command(
+                InstanceIds=[master_instance_id],
+                DocumentName="AWS-RunShellScript",
+                Parameters={"commands": [check_cmd]},
+                Comment=f"K3s autoscaler: critical pod check {node_name}",
+                TimeoutSeconds=60,
+            )
+            command_id = resp["Command"]["CommandId"]
+            start = time.time()
+            while time.time() - start < 30:
+                status, output = self._get_ssm_command_status(master_instance_id, command_id)
+                if status in ("Success", "Failed", "TimedOut", "Cancelled", "Cancelling"):
+                    break
+                time.sleep(2)
+            if "CRITICAL_PODS_FOUND" in output:
+                reason = output.strip()
+                logger.warning(f"Critical pods on {node_name}: {reason}")
+                return True, reason
+            return False, ""
+        except Exception as e:
+            logger.error(f"Critical pod check failed for {node_name}: {e}. Skipping drain for safety.")
+            return True, f"check_error:{e}"
 
     def _send_drain_command(self, master_instance_id: str, node_name: str) -> str:
         """

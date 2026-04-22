@@ -194,9 +194,9 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0208 * 10))) * 100",
+          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0464 * 10))) * 100",
           "refId": "A",
-          "legendFormat": "Savings vs Always-On"
+          "legendFormat": "Savings vs Always-On (10×t3.medium)"
         }
       ],
       "fieldConfig": {
