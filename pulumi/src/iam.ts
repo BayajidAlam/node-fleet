@@ -109,6 +109,18 @@ export const workerPolicy = new aws.iam.RolePolicy("worker-policy", {
           Action: ["secretsmanager:GetSecretValue"],
           Resource: `arn:aws:secretsmanager:${r}:${a}:secret:node-fleet/k3s-token*`,
         },
+        {
+          Sid: "CloudWatchReadForGrafana",
+          Effect: "Allow",
+          Action: [
+            "cloudwatch:GetMetricData",
+            "cloudwatch:GetMetricStatistics",
+            "cloudwatch:ListMetrics",
+            "cloudwatch:DescribeAlarms",
+            "cloudwatch:DescribeAlarmsForMetric",
+          ],
+          Resource: "*",
+        },
       ],
     }),
   ),
