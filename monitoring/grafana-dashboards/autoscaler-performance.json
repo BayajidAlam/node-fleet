@@ -23,7 +23,7 @@
           "namespace": "AWS/Lambda",
           "metricName": "Duration",
           "dimensions": {
-            "FunctionName": "node-fleet-cluster-autoscaler"
+            "FunctionName": "node-fleet-prod-autoscaler"
           },
           "statistics": ["Average", "p50", "p95", "p99"],
           "region": "ap-southeast-1",
@@ -59,7 +59,7 @@
           "namespace": "AWS/Lambda",
           "metricName": "Invocations",
           "dimensions": {
-            "FunctionName": "node-fleet-cluster-autoscaler"
+            "FunctionName": "node-fleet-prod-autoscaler"
           },
           "statistics": ["Sum"],
           "region": "ap-southeast-1",
@@ -248,7 +248,7 @@
           "namespace": "AWS/Lambda",
           "metricName": "Errors",
           "dimensions": {
-            "FunctionName": "node-fleet-cluster-autoscaler"
+            "FunctionName": "node-fleet-prod-autoscaler"
           },
           "statistics": ["Sum"],
           "region": "ap-southeast-1",
