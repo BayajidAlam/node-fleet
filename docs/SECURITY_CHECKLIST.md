@@ -113,7 +113,7 @@ Before deploying to production, verify each item:
         "dynamodb:DeleteItem",
         "dynamodb:Query"
       ],
-      "Resource": "arn:aws:dynamodb:ap-southeast-1:*:table/k3s-autoscaler-state"
+      "Resource": "arn:aws:dynamodb:ap-southeast-1:*:table/node-fleet-prod-state"
     },
     {
       "Sid": "DynamoDBMetricsHistory",
@@ -175,7 +175,7 @@ Before deploying to production, verify each item:
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/lambda/node-fleet-cluster-autoscaler:*"
+      "Resource": "arn:aws:logs:ap-southeast-1:*:log-group:/aws/lambda/node-fleet-prod-autoscaler:*"
     },
     {
       "Sid": "SQSDeadLetterQueue",
@@ -300,7 +300,7 @@ def validate_drain_complete(exit_status, output):
 
 ```bash
 # 1. IMMEDIATELY disable EventBridge
-aws events disable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+aws events disable-rule --name node-fleet-prod-autoscaler-schedule --region ap-southeast-1
 
 # 2. Check what launched
 aws ec2 describe-instances \
@@ -314,17 +314,17 @@ aws ec2 describe-instances \
 
 # 4. Release DynamoDB lock
 aws dynamodb update-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
 
 # 5. Fix Lambda logic
 # 6. Test manually
-aws lambda invoke --function-name node-fleet-cluster-autoscaler /tmp/test.json
+aws lambda invoke --function-name node-fleet-prod-autoscaler /tmp/test.json
 
 # 7. Re-enable only after fix verified
-aws events enable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+aws events enable-rule --name node-fleet-prod-autoscaler-schedule --region ap-southeast-1
 ```
 
 ### Credentials Leaked (Secret Exposed)
@@ -361,7 +361,7 @@ aws cloudtrail lookup-events \
 # Verify Lambda IAM has correct permissions (no over-privilege)
 aws iam simulate-principal-policy \
   --policy-source-arn $(aws lambda get-function-configuration \
-    --function-name node-fleet-cluster-autoscaler \
+    --function-name node-fleet-prod-autoscaler \
     --query 'Role' --output text) \
   --action-names ec2:TerminateInstances \
   --resource-arns "arn:aws:ec2:ap-southeast-1:*:instance/*"
@@ -373,7 +373,7 @@ aws ec2 describe-volumes \
 
 # Verify DynamoDB SSE
 aws dynamodb describe-table \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --query 'Table.SSEDescription' --output json
 
 # Check for any publicly exposed resources

@@ -108,7 +108,7 @@ Prometheus ← demo-app (queue depth, latency, error rate)
 
 ```bash
 PROMETHEUS_URL=http://<master-private-ip>:30090
-DYNAMODB_TABLE=k3s-autoscaler-state
+DYNAMODB_TABLE=node-fleet-prod-state
 CLUSTER_ID=node-fleet-prod
 MIN_NODES=2
 MAX_NODES=10
@@ -331,7 +331,7 @@ basic_auth_users:
 
 ## 7. DynamoDB Schema
 
-**Table**: `k3s-autoscaler-state`  
+**Table**: `node-fleet-prod-state`  
 **Key**: `cluster_id` (String, partition key)
 
 ### Full Example Item
@@ -375,7 +375,7 @@ basic_auth_users:
 
 ```python
 dynamodb.update_item(
-    TableName='k3s-autoscaler-state',
+    TableName='node-fleet-prod-state',
     Key={'cluster_id': {'S': 'node-fleet-prod'}},
     UpdateExpression='SET scaling_in_progress = :true, '
                      'lock_acquired_at = :now, lock_expiry = :expiry',
@@ -481,8 +481,8 @@ k6 run tests/load/load-test-flash-sale.js
 |---------|-------|-----|
 | Lambda can't reach Prometheus | SG missing port 30090 from Lambda SG | Add inbound TCP :30090 from `sg-lambda` to `sg-master` |
 | Workers not joining cluster | Token not in Secrets Manager at boot | Store token **before** workers launch: `aws secretsmanager put-secret-value --secret-id node-fleet/k3s-token` |
-| DynamoDB lock stuck | Lambda crashed mid-execution | `aws dynamodb update-item --table-name k3s-autoscaler-state --key '{"cluster_id":{"S":"node-fleet-prod"}}' --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry'` |
-| Lambda times out | Prometheus down or slow VPC routing | Disable EventBridge: `aws events disable-rule --name node-fleet-autoscaler-trigger`. Check Prometheus pod: `kubectl get pod -n monitoring` |
+| DynamoDB lock stuck | Lambda crashed mid-execution | `aws dynamodb update-item --table-name node-fleet-prod-state --key '{"cluster_id":{"S":"node-fleet-prod"}}' --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry'` |
+| Lambda times out | Prometheus down or slow VPC routing | Disable EventBridge: `aws events disable-rule --name node-fleet-prod-autoscaler-schedule`. Check Prometheus pod: `kubectl get pod -n monitoring` |
 | Windows pip build fails on Lambda | Windows-native C extensions | `pip install --platform manylinux2014_x86_64 --only-binary=:all: --target=lambda/ cryptography paramiko` |
 | Prometheus shows 0 metrics | node-exporter not deployed | `kubectl apply -f gitops/infrastructure/prometheus-deployment.yaml` |
 | Grafana dashboards blank | ConfigMap missing | `bash scripts/deploy_monitoring.sh` |
@@ -534,7 +534,7 @@ cd pulumi && pulumi up --yes
 kubectl get nodes -o wide
 
 # Watch autoscaler logs
-aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow
+aws logs tail /aws/lambda/node-fleet-prod-autoscaler --follow
 
 # Run tests
 cd tests/lambda && python -m pytest . -v
@@ -543,7 +543,7 @@ cd tests/lambda && python -m pytest . -v
 k6 run tests/load/load-test.js --vus 100 --duration 5m
 
 # Emergency: disable autoscaler
-aws events disable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+aws events disable-rule --name node-fleet-prod-autoscaler-schedule --region ap-southeast-1
 ```
 
 ## License

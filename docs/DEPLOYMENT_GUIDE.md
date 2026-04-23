@@ -144,7 +144,7 @@ kubectl get nodes -o wide
 curl -u prometheus:<password> http://$MASTER_IP:30090/api/v1/targets | jq '.data.activeTargets[].health'
 
 # Check Lambda
-aws lambda invoke --function-name node-fleet-cluster-autoscaler /tmp/out.json
+aws lambda invoke --function-name node-fleet-prod-autoscaler /tmp/out.json
 cat /tmp/out.json
 
 # Full verification script
@@ -234,7 +234,7 @@ zip -r function.zip . \
 
 # Deploy to Lambda
 aws lambda update-function-code \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --zip-file fileb://function.zip \
   --region ap-southeast-1
 
@@ -252,7 +252,7 @@ cd lambda
 # Edit Python files...
 zip -r function.zip . --exclude "*.pyc" "__pycache__/*" "venv/*" "tests/*"
 aws lambda update-function-code \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --zip-file fileb://function.zip
 ```
 
@@ -277,7 +277,7 @@ kubectl rollout restart deployment/prometheus -n monitoring
 ```bash
 # Temporarily raise MAX_NODES
 aws lambda update-function-configuration \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --environment "Variables={MAX_NODES=15,...}" \
   --region ap-southeast-1
 
@@ -295,12 +295,12 @@ aws ec2 run-instances \
 ```bash
 # Disable EventBridge (stops Lambda invocations)
 aws events disable-rule \
-  --name node-fleet-autoscaler-trigger \
+  --name node-fleet-prod-autoscaler-schedule \
   --region ap-southeast-1
 
 # Re-enable when fixed
 aws events enable-rule \
-  --name node-fleet-autoscaler-trigger \
+  --name node-fleet-prod-autoscaler-schedule \
   --region ap-southeast-1
 ```
 
@@ -308,7 +308,7 @@ aws events enable-rule \
 
 ```bash
 aws dynamodb get-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --region ap-southeast-1 | jq .
 ```
@@ -318,7 +318,7 @@ aws dynamodb get-item \
 ```bash
 # Use only if Lambda crashed and left lock stuck
 aws dynamodb update-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
@@ -328,13 +328,13 @@ aws dynamodb update-item \
 
 ```bash
 # Stream live logs
-aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow
+aws logs tail /aws/lambda/node-fleet-prod-autoscaler --follow
 
 # Last 50 invocations
 aws logs get-log-events \
-  --log-group-name /aws/lambda/node-fleet-cluster-autoscaler \
+  --log-group-name /aws/lambda/node-fleet-prod-autoscaler \
   --log-stream-name "$(aws logs describe-log-streams \
-    --log-group-name /aws/lambda/node-fleet-cluster-autoscaler \
+    --log-group-name /aws/lambda/node-fleet-prod-autoscaler \
     --order-by LastEventTime --descending \
     --query 'logStreams[0].logStreamName' --output text)" \
   --limit 100
@@ -346,7 +346,7 @@ aws logs get-log-events \
 
 ```bash
 # 1. Disable autoscaler first
-aws events disable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+aws events disable-rule --name node-fleet-prod-autoscaler-schedule --region ap-southeast-1
 
 # 2. Drain all workers gracefully
 for node in $(kubectl get nodes -l 'node-role.kubernetes.io/worker' -o name); do
@@ -370,12 +370,12 @@ rm -f node-fleet-key.pem lambda/function.zip
 ```bash
 # List versions
 aws lambda list-versions-by-function \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --query 'Versions[*].[Version,LastModified]' --output table
 
 # Point alias to previous version
 aws lambda update-alias \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --name live \
   --function-version <previous-version>
 ```

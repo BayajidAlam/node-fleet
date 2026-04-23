@@ -11,21 +11,21 @@ kubectl get pods --all-namespaces
 
 # Check autoscaler state
 aws dynamodb get-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --region ap-southeast-1 | jq .
 
 # Stream Lambda logs
-aws logs tail /aws/lambda/node-fleet-cluster-autoscaler --follow
+aws logs tail /aws/lambda/node-fleet-prod-autoscaler --follow
 
 # Check EventBridge status
 aws events describe-rule \
-  --name node-fleet-autoscaler-trigger \
+  --name node-fleet-prod-autoscaler-schedule \
   --region ap-southeast-1 | jq '.State'
 
 # Test Lambda manually
 aws lambda invoke \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --payload '{"source":"manual-test"}' \
   /tmp/lambda-out.json && cat /tmp/lambda-out.json
 ```
@@ -44,7 +44,7 @@ aws lambda invoke \
 ```bash
 # Verify Lambda is in VPC
 aws lambda get-function-configuration \
-  --function-name node-fleet-cluster-autoscaler | jq '.VpcConfig'
+  --function-name node-fleet-prod-autoscaler | jq '.VpcConfig'
 
 # Add missing SG rule (if not present)
 SG_MASTER=$(aws ec2 describe-security-groups \
@@ -101,14 +101,14 @@ aws secretsmanager put-secret-value \
 ```bash
 # Check lock state
 aws dynamodb get-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --projection-expression 'scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
 
 # Manual release (only if sure no Lambda is currently scaling)
 aws dynamodb update-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
@@ -127,7 +127,7 @@ echo "Lock released"
 **Fix**:
 ```bash
 # 1. Immediately disable EventBridge to stop repeated invocations
-aws events disable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+aws events disable-rule --name node-fleet-prod-autoscaler-schedule --region ap-southeast-1
 
 # 2. Check if instances are still launching
 aws ec2 describe-instances \
@@ -140,13 +140,13 @@ curl -u prometheus:<password> http://$MASTER_IP:30090/-/healthy
 
 # 4. Release stale lock (lock auto-clears at 360s, but manual if urgent)
 aws dynamodb update-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --update-expression 'REMOVE scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
 
 # 5. Fix the root cause, then re-enable
-aws events enable-rule --name node-fleet-autoscaler-trigger --region ap-southeast-1
+aws events enable-rule --name node-fleet-prod-autoscaler-schedule --region ap-southeast-1
 ```
 
 ---
@@ -176,7 +176,7 @@ pip install -r requirements.txt --target=. \
 
 zip -r function.zip . --exclude "*.pyc" "__pycache__/*" "venv/*" "tests/*"
 aws lambda update-function-code \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --zip-file fileb://function.zip
 ```
 
@@ -251,14 +251,14 @@ curl -u admin:<password> http://$MASTER_IP:30300/api/datasources | jq '.[].name'
 ```bash
 # Check last scale time
 aws dynamodb get-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --query 'Item.{last_scale_time:last_scale_time,last_scale_action:last_scale_action}' \
   --region ap-southeast-1
 
 # Check recent Lambda decisions in CloudWatch
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/node-fleet-cluster-autoscaler \
+  --log-group-name /aws/lambda/node-fleet-prod-autoscaler \
   --filter-pattern '"scale_down" OR "cooldown" OR "insufficient"' \
   --start-time $(date -d '30 minutes ago' +%s000)
 ```
@@ -275,7 +275,7 @@ aws logs filter-log-events \
 ```bash
 # Check spot interruption logs
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/node-fleet-cluster-autoscaler \
+  --log-group-name /aws/lambda/node-fleet-prod-autoscaler \
   --filter-pattern '"spot_interruption"'
 
 # Verify EventBridge rule for spot interruptions exists
@@ -287,7 +287,7 @@ kubectl patch deployment demo-app -p '{"spec":{"template":{"spec":{"terminationG
 # Add more On-Demand workers temporarily
 # Adjust SPOT_PERCENTAGE env var in Lambda config
 aws lambda update-function-configuration \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --environment "Variables={SPOT_PERCENTAGE=50,...}"
 ```
 
@@ -316,7 +316,7 @@ kubectl uncordon <node-name>
 
 # Clean up DynamoDB drain state if needed
 aws dynamodb update-item \
-  --table-name k3s-autoscaler-state \
+  --table-name node-fleet-prod-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
   --update-expression 'SET draining_instances = :empty' \
   --expression-attribute-values '{":empty":{"L":[]}}' \
