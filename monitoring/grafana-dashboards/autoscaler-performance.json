@@ -95,7 +95,13 @@
           }
         }
       },
-      "options": { "graphMode": "area", "colorMode": "value" }
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "reduceOptions": {
+          "calcs": ["sum"]
+        }
+      }
     },
     {
       "id": 3,
