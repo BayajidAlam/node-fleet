@@ -105,7 +105,7 @@
     },
     {
       "id": 3,
-      "title": "Scaling Decisions",
+      "title": "Scaling Decisions (Scale Up vs Scale Down)",
       "type": "piechart",
       "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
       "gridPos": { "x": 18, "y": 0, "w": 6, "h": 8 },
@@ -137,26 +137,15 @@
           "matchExact": false,
           "refId": "B",
           "alias": "Scale Down"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "namespace": "NodeFleet/Autoscaler",
-          "metricName": "AutoscalerInvocations",
-          "dimensions": {},
-          "statistic": "Sum",
-          "region": "ap-southeast-1",
-          "queryMode": "Metrics",
-          "metricQueryType": 0,
-          "metricEditorMode": 0,
-          "matchExact": false,
-          "refId": "C",
-          "alias": "Total Invocations"
         }
       ],
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom" },
         "pieType": "pie",
-        "displayLabels": ["percent", "name"]
+        "displayLabels": ["percent", "name", "value"],
+        "reduceOptions": {
+          "calcs": ["sum"]
+        }
       }
     },
     {
