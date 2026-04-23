@@ -69,7 +69,8 @@ data:
       
       - job_name: 'demo-app'
         static_configs:
-          - targets: ['demo-app.default.svc.cluster.local:5000']
+          - targets: ['demo-app.default.svc.cluster.local:80']
+        metrics_path: /metrics
 
       - job_name: 'cost-exporter'
         kubernetes_sd_configs:
@@ -115,6 +116,7 @@ spec:
             - "--storage.tsdb.path=/prometheus"
             - "--storage.tsdb.retention.time=7d"
             - "--web.enable-lifecycle"
+            - "--web.enable-admin-api"
           ports:
             - containerPort: 9090
           volumeMounts:

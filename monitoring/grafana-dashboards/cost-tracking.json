@@ -102,7 +102,7 @@
     },
     {
       "id": 4,
-      "title": "Cost Savings vs Always-On (10×t3.medium)",
+      "title": "Cost Savings vs Static Fleet (1×t3.medium + 5×t3.small on-demand)",
       "type": "stat",
       "datasource": "Prometheus",
       "gridPos": {
@@ -113,7 +113,7 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0464 * 10))) * 100",
+          "expr": "aws_autoscaling_savings_percentage{cluster=\"node-fleet\",job=\"cost-exporter\"}",
           "refId": "A",
           "legendFormat": "Savings %"
         }
@@ -152,8 +152,8 @@
           "refId": "A"
         },
         {
-          "expr": "0.0464 * 10",
-          "legendFormat": "Always-On Baseline (10×t3.medium on-demand)",
+          "expr": "0.0464 + (5 * 0.0232)",
+          "legendFormat": "Static Fleet Baseline (1×t3.medium + 5×t3.small on-demand = $0.1624/hr)",
           "refId": "B"
         },
         {

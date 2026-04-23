@@ -112,6 +112,15 @@ data:
             replacement: \$1:\$2
             target_label: __address__
 
+      - job_name: 'demo-app'
+        static_configs:
+          - targets: ['demo-app.default.svc.cluster.local:80']
+        metrics_path: /metrics
+
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics.monitoring.svc.cluster.local:8080']
+
       - job_name: 'cost-exporter'
         kubernetes_sd_configs:
           - role: node
@@ -242,9 +251,14 @@ spec:
         volumeMounts:
         - name: grafana-storage
           mountPath: /var/lib/grafana
+        - name: grafana-datasources
+          mountPath: /etc/grafana/provisioning/datasources
       volumes:
       - name: grafana-storage
         emptyDir: {}
+      - name: grafana-datasources
+        configMap:
+          name: grafana-datasources
 ---
 apiVersion: v1
 kind: Service

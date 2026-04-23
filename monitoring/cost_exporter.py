@@ -68,6 +68,12 @@ spot_savings_percentage = Gauge(
     ['cluster']
 )
 
+autoscaling_savings_percentage = Gauge(
+    'aws_autoscaling_savings_percentage',
+    'Savings percentage vs static 5-node on-demand fleet baseline',
+    ['cluster']
+)
+
 # Cost efficiency metrics
 cost_per_pod = Gauge(
     'aws_cost_per_pod',
@@ -352,34 +358,49 @@ class EnhancedCostExporter:
     def update_metrics(self):
         """Update all Prometheus metrics with comprehensive cost data"""
         instances = self.get_running_instances()
-        
+
         if not instances:
             print("No running instances found")
             return
-        
+
         # Calculate total costs
         total_hourly = sum(self.calculate_instance_cost(i) for i in instances)
         total_daily = total_hourly * 24
         total_monthly = total_daily * 30
-        
+
         # Update aggregate metrics
         total_cluster_cost_hourly.labels(cluster=self.cluster_name).set(total_hourly)
         total_cluster_cost_daily.labels(cluster=self.cluster_name).set(total_daily)
         total_cluster_cost_monthly.labels(cluster=self.cluster_name).set(total_monthly)
-        
+
         # Track instance costs by various dimensions
         cost_by_lifecycle_data = {'spot': 0.0, 'on-demand': 0.0}
         cost_by_type_data = {}
         cost_by_az_data = {}
-        
+
+        # Remove stale gauge labels for terminated instances
+        current_ids = {i['InstanceId'] for i in instances}
+        if hasattr(self, '_previous_instance_labels'):
+            for label_set in self._previous_instance_labels:
+                if label_set['instance_id'] not in current_ids:
+                    try:
+                        ec2_cost_per_hour.remove(
+                            label_set['instance_id'], label_set['instance_type'],
+                            label_set['lifecycle'], label_set['availability_zone'],
+                            self.cluster_name
+                        )
+                    except Exception:
+                        pass
+
+        current_labels = []
         for instance in instances:
             instance_id = instance['InstanceId']
             instance_type = instance.get('InstanceType', 'unknown')
             lifecycle = instance.get('InstanceLifecycle', 'on-demand')
             az = instance['Placement'].get('AvailabilityZone', 'unknown')
-            
+
             cost = self.calculate_instance_cost(instance)
-            
+
             # Per-instance metric
             ec2_cost_per_hour.labels(
                 instance_id=instance_id,
@@ -388,16 +409,20 @@ class EnhancedCostExporter:
                 availability_zone=az,
                 cluster=self.cluster_name
             ).set(cost)
-            
+            current_labels.append({'instance_id': instance_id, 'instance_type': instance_type,
+                                    'lifecycle': lifecycle, 'availability_zone': az})
+
             # Aggregate by lifecycle
             cost_by_lifecycle_data[lifecycle] = cost_by_lifecycle_data.get(lifecycle, 0.0) + cost
-            
+
             # Aggregate by type
             cost_by_type_data[instance_type] = cost_by_type_data.get(instance_type, 0.0) + cost
-            
+
             # Aggregate by AZ
             cost_by_az_data[az] = cost_by_az_data.get(az, 0.0) + cost
-        
+
+        self._previous_instance_labels = current_labels
+
         # Update breakdown metrics
         for lifecycle, cost in cost_by_lifecycle_data.items():
             cost_by_lifecycle.labels(lifecycle=lifecycle, cluster=self.cluster_name).set(cost)
@@ -412,7 +437,12 @@ class EnhancedCostExporter:
         savings, percentage = self.calculate_spot_savings(instances)
         spot_savings_hourly.labels(cluster=self.cluster_name).set(savings)
         spot_savings_percentage.labels(cluster=self.cluster_name).set(percentage)
-        
+
+        # Autoscaling savings vs static fleet: 1×t3.medium master + 5×t3.small workers all on-demand
+        STATIC_FLEET_COST = EC2_PRICING['t3.medium'] + 5 * EC2_PRICING['t3.small']  # $0.1624/hr
+        autoscaling_savings_pct = max(0.0, (STATIC_FLEET_COST - total_hourly) / STATIC_FLEET_COST * 100)
+        autoscaling_savings_percentage.labels(cluster=self.cluster_name).set(autoscaling_savings_pct)
+
         # Calculate efficiency metrics
         pod_count = self.get_pod_count()
         cost_per_pod.labels(cluster=self.cluster_name).set(total_hourly / pod_count if pod_count > 0 else 0)

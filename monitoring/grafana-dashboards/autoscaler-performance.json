@@ -23,9 +23,10 @@
           "namespace": "AWS/Lambda",
           "metricName": "Duration",
           "dimensions": {
-            "FunctionName": "node-fleet-autoscaler"
+            "FunctionName": "node-fleet-cluster-autoscaler"
           },
           "statistics": ["Average", "p50", "p95", "p99"],
+          "region": "ap-southeast-1",
           "refId": "A"
         }
       ],
@@ -58,9 +59,10 @@
           "namespace": "AWS/Lambda",
           "metricName": "Invocations",
           "dimensions": {
-            "FunctionName": "node-fleet-autoscaler"
+            "FunctionName": "node-fleet-cluster-autoscaler"
           },
           "statistics": ["Sum"],
+          "region": "ap-southeast-1",
           "refId": "A"
         }
       ],
@@ -108,30 +110,27 @@
           "metricName": "ScaleUpEvents",
           "dimensions": {},
           "statistics": ["Sum"],
+          "region": "ap-southeast-1",
           "refId": "A",
-          "alias": "Scale Up",
-          "id": "scale_up",
-          "type": "cloudwatch"
+          "alias": "Scale Up"
         },
         {
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScaleDownEvents",
           "dimensions": {},
           "statistics": ["Sum"],
+          "region": "ap-southeast-1",
           "refId": "B",
-          "alias": "Scale Down",
-          "id": "scale_down",
-          "type": "cloudwatch"
+          "alias": "Scale Down"
         },
         {
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "AutoscalerInvocations",
           "dimensions": {},
           "statistics": ["Sum"],
+          "region": "ap-southeast-1",
           "refId": "C",
-          "alias": "Total Invocations",
-          "id": "no_action",
-          "type": "cloudwatch"
+          "alias": "Total Invocations"
         }
       ],
       "options": {
@@ -160,6 +159,7 @@
           "metricName": "NodeJoinLatency",
           "dimensions": {},
           "statistics": ["Average", "p50", "p95", "p99", "Maximum"],
+          "region": "ap-southeast-1",
           "refId": "A"
         }
       ],
@@ -194,9 +194,9 @@
       },
       "targets": [
         {
-          "expr": "(1 - (sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) / (0.0464 * 10))) * 100",
+          "expr": "aws_autoscaling_savings_percentage{cluster=\"node-fleet\",job=\"cost-exporter\"}",
           "refId": "A",
-          "legendFormat": "Savings vs Always-On (10×t3.medium)"
+          "legendFormat": "Savings vs Static Fleet (1×t3.medium + 5×t3.small on-demand)"
         }
       ],
       "fieldConfig": {
@@ -248,9 +248,10 @@
           "namespace": "AWS/Lambda",
           "metricName": "Errors",
           "dimensions": {
-            "FunctionName": "node-fleet-autoscaler"
+            "FunctionName": "node-fleet-cluster-autoscaler"
           },
           "statistics": ["Sum"],
+          "region": "ap-southeast-1",
           "refId": "A"
         },
         {
@@ -258,6 +259,7 @@
           "metricName": "ScalingFailures",
           "dimensions": {},
           "statistics": ["Sum"],
+          "region": "ap-southeast-1",
           "refId": "B"
         }
       ],
@@ -274,8 +276,8 @@
     {
       "id": 7,
       "title": "Current Node Count",
-      "type": "graph",
-      "datasource": "-- Mixed --",
+      "type": "timeseries",
+      "datasource": "Prometheus",
       "gridPos": {
         "x": 12,
         "y": 16,
@@ -284,30 +286,24 @@
       },
       "targets": [
         {
-          "namespace": "NodeFleet/Autoscaler",
-          "metricName": "CurrentNodeCount",
-          "dimensions": {},
-          "statistics": ["Average"],
-          "datasource": "CloudWatch",
-          "refId": "A"
-        },
-        {
           "expr": "count(kube_node_info)",
           "datasource": "Prometheus",
-          "refId": "B",
-          "legendFormat": "Actual Nodes (Prometheus)"
-        }
-      ],
-      "yaxes": [
-        {
-          "format": "short",
-          "label": "Node Count",
-          "min": 0
+          "refId": "A",
+          "legendFormat": "Actual Nodes"
         },
         {
-          "format": "short"
+          "expr": "count(kube_node_info{node!~\".*master.*\"})",
+          "datasource": "Prometheus",
+          "refId": "B",
+          "legendFormat": "Worker Nodes"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      }
     }
   ]
 }

@@ -79,12 +79,12 @@
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=\"demo-app\",status=~\"5..\"}[2m])) / sum(rate(http_requests_total{job=\"demo-app\"}[2m])) * 100",
+          "expr": "(sum(rate(http_requests_total{job=\"demo-app\",status=~\"5..\"}[2m])) or vector(0)) / sum(rate(http_requests_total{job=\"demo-app\"}[2m])) * 100",
           "legendFormat": "5xx Error Rate",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(http_requests_total{job=\"demo-app\",status=~\"4..\"}[2m])) / sum(rate(http_requests_total{job=\"demo-app\"}[2m])) * 100",
+          "expr": "(sum(rate(http_requests_total{job=\"demo-app\",status=~\"4..\"}[2m])) or vector(0)) / sum(rate(http_requests_total{job=\"demo-app\"}[2m])) * 100",
           "legendFormat": "4xx Error Rate",
           "refId": "B"
         }
@@ -143,7 +143,7 @@
       "gridPos": { "x": 0, "y": 16, "w": 8, "h": 6 },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=\"demo-app\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"demo-app\"}[5m])) * 100",
+          "expr": "(sum(rate(http_requests_total{job=\"demo-app\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_requests_total{job=\"demo-app\"}[5m])) * 100",
           "refId": "A"
         }
       ],
