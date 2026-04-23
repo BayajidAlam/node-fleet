@@ -196,15 +196,17 @@ ROI = (720,000 - 100,000) / 100,000 = **620%** (Executive Summary rounds to matc
 
 ### Grafana Cost Dashboard
 
-Access: `http://<master-ip>:30030/d/cost-tracking`
+Access: `http://<master-ip>:30300/d/cost-tracking`
+
+![Cost Dashboard](dashboards/dashboard-cost-tracking.png)
 
 Panels:
 - **Hourly cost** (real-time from Prometheus `aws_ec2_instance_cost_per_hour`)
 - **Daily projection** (`hourly × 24`)
 - **Monthly projection** (`hourly × 730`)
-- **Savings vs always-on** (`(1 - current/baseline) × 100%`)
+- **Savings vs static fleet** (`aws_autoscaling_savings_percentage` — vs 1×t3.medium + 5×t3.small on-demand = $0.1624/hr baseline)
 - **Spot vs On-Demand breakdown** (pie chart by lifecycle label)
-- **Cost trend** (24h graph vs baseline 0.0464×10=$0.464/hr)
+- **Cost trend** (24h graph vs static fleet baseline $0.1624/hr)
 
 ### AWS Cost Explorer
 

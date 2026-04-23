@@ -107,7 +107,7 @@ Every EventBridge invocation runs these steps in order. Lock released in `finall
 |-----------|----------|------|--------|---------|
 | Inbound | TCP | 6443 | sg-worker | K3s API server |
 | Inbound | TCP | 30090 | sg-lambda | Prometheus NodePort |
-| Inbound | TCP | 30030 | 0.0.0.0/0 | Grafana UI |
+| Inbound | TCP | 30300 | 0.0.0.0/0 | Grafana UI |
 | Inbound | TCP | 22 | 0.0.0.0/0 | SSH admin |
 | Outbound | ALL | ALL | 0.0.0.0/0 | Internet via NAT |
 
@@ -418,3 +418,29 @@ def get_prometheus_credentials():
 | `node-fleet/prometheus-auth` | `{"username":"...", "password":"..."}` |
 | `node-fleet/ssh-key` | Master node SSH private key (PEM) |
 | `node-fleet/slack-webhook` | Slack incoming webhook URL |
+
+---
+
+## 9. Monitoring Dashboards
+
+Grafana runs on master node at `http://<master-ip>:30300`. Four dashboards cover all observability layers. Both Prometheus and CloudWatch datasources are provisioned automatically.
+
+### Cluster Overview
+Real-time cluster health — node count, CPU/memory utilization, network I/O, disk I/O, pending pods, scaling events timeline, pod distribution heatmap.
+
+![Cluster Overview Dashboard](dashboards/dashboard-cluster-overview.png)
+
+### Autoscaler Performance
+Lambda execution metrics (CloudWatch) + cost savings gauge (Prometheus). Shows Lambda duration, invocation count, scaling decisions (scale-up vs scale-down ratio), node join latency, Lambda errors, and live node count.
+
+![Autoscaler Performance Dashboard](dashboards/dashboard-autoscaler-performance.png)
+
+### Application Metrics
+Demo app observability — request rate (QPS), latency percentiles (p50/p95/p99), error rates (4xx/5xx), queue depth. Triggers autoscaler via custom metrics thresholds.
+
+![Application Metrics Dashboard](dashboards/dashboard-application-metrics.png)
+
+### Cost Dashboard
+See [COST_ANALYSIS.md](COST_ANALYSIS.md) for full breakdown. Real-time hourly/daily/monthly cost projections, savings vs static fleet, spot vs on-demand breakdown, CloudWatch billing panel.
+
+![Cost Dashboard](dashboards/dashboard-cost-tracking.png)

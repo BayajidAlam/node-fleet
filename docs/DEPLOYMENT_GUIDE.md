@@ -151,7 +151,7 @@ cat /tmp/out.json
 bash scripts/verify-autoscaler-requirements.sh
 
 # Access Grafana
-echo "Grafana: http://$MASTER_IP:30030  (admin / check Secrets Manager)"
+echo "Grafana: http://$MASTER_IP:30300  (admin / check Secrets Manager)"
 ```
 
 ---

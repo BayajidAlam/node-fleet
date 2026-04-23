@@ -234,7 +234,7 @@ kubectl rollout restart deployment/grafana -n monitoring
 kubectl rollout status deployment/grafana -n monitoring
 
 # Verify datasource
-curl -u admin:<password> http://$MASTER_IP:30030/api/datasources | jq '.[].name'
+curl -u admin:<password> http://$MASTER_IP:30300/api/datasources | jq '.[].name'
 ```
 
 ---

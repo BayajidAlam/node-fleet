@@ -163,7 +163,7 @@ aws secretsmanager put-secret-value \
 kubectl get nodes -o wide
 bash scripts/verify-autoscaler-requirements.sh
 # Prometheus: http://<master-ip>:30090
-# Grafana:    http://<master-ip>:30030  (admin / from Secrets Manager)
+# Grafana:    http://<master-ip>:30300  (admin / from Secrets Manager)
 ```
 
 ### Secrets Manager Paths
@@ -292,7 +292,7 @@ scrape_configs:
 
 ### Grafana Dashboards
 
-Access at `http://<master-ip>:30030` (credentials from Secrets Manager `node-fleet/prometheus-auth`).
+Access at `http://<master-ip>:30300` (credentials from Secrets Manager `node-fleet/grafana-admin-password`).
 
 | Dashboard | URL path | Key Panels |
 |-----------|----------|-----------|
