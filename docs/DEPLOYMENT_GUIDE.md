@@ -20,6 +20,12 @@ Hard-won from production. Skipping these wastes hours.
 
 7. **EventBridge resets lambda schedule on Lambda code update** — Re-verify EventBridge is enabled after updating Lambda function code.
 
+8. **EventBridge deploys at rate(5 minutes) despite Pulumi source saying rate(2 minutes)** — Pulumi state drift. Always verify and fix manually after `pulumi up` (see Step 7).
+
+9. **Install FluxCD BEFORE running deploy.sh** — FluxCD manages K8s manifests via GitOps. Without it, gitops auto-reconciliation does not work and changes to gitops/ won't apply automatically.
+
+10. **Grafana and Prometheus MUST run on master node** — Workers are auto-scaled and can be terminated. Without `nodeSelector: node-role.kubernetes.io/control-plane: "true"` on both deployments, they may land on workers and lose CloudWatch IAM access. The gitops manifests already have this set.
+
 ---
 
 ## Prerequisites
@@ -117,41 +123,80 @@ aws secretsmanager get-secret-value \
   --query SecretString --output text
 ```
 
-### Step 5 — Deploy Lambda, Monitoring, and GitOps
+### Step 5 — Install FluxCD (GitOps)
+
+FluxCD auto-reconciles K8s manifests from the GitHub repo every 10 minutes.
 
 ```bash
-# Full deploy: Lambda + monitoring stack + GitOps
+# On master node
+ssh -i node-fleet-key.pem ubuntu@$MASTER_IP
+cd /home/ubuntu
+./gitops/install-flux.sh     # installs Flux + connects to GitHub repo
+sudo k3s kubectl get kustomizations -A   # should show apps/infrastructure/monitoring: Ready
+exit
+```
+
+### Step 6 — Deploy Lambda, Monitoring, and Grafana Dashboards
+
+```bash
+# Full deploy: Lambda + monitoring stack + Grafana dashboard import
 ./deploy.sh $MASTER_IP
 
 # Or skip infra if already deployed:
 ./deploy.sh $MASTER_IP --skip-infra
 ```
 
-The deploy script:
-1. Builds Lambda zip (Linux wheels)
-2. Updates Lambda function code
-3. Creates monitoring namespace + ConfigMaps
-4. Deploys Prometheus, Grafana, cost-exporter
-5. Applies FluxCD GitOps manifests
+The deploy script does:
+1. Builds Lambda zip (Linux wheels) and deploys to `node-fleet-prod-autoscaler`
+2. Creates monitoring namespace + `grafana-dashboards` ConfigMap from JSON files
+3. Deploys Prometheus, Grafana, cost-exporter via gitops manifests
+4. Runs `fix-grafana-dashboards.sh` — dynamically resolves Grafana datasource UIDs and imports all 4 dashboards with correct UIDs (handles fresh Grafana installs where UIDs auto-generate)
 
-### Step 6 — Verify Everything
+### Step 7 — Fix EventBridge Rate (verify after pulumi up)
+
+`pulumi up` sometimes deploys `rate(5 minutes)` due to state drift. Verify and fix:
 
 ```bash
-# Check K3s nodes (should show master + 2 initial workers)
+# Check current rate
+aws events list-rules --name-prefix node-fleet-prod-autoscaler \
+  --region ap-southeast-1 --query "Rules[*].[Name,ScheduleExpression]" --output table
+
+# Fix to 2 minutes if wrong
+aws events put-rule \
+  --name node-fleet-prod-autoscaler-schedule \
+  --schedule-expression "rate(2 minutes)" \
+  --state ENABLED \
+  --region ap-southeast-1
+```
+
+### Step 8 — Verify Everything
+
+```bash
+# Check K3s nodes (should show master + workers)
+export KUBECONFIG=/tmp/k3s-kubeconfig.yaml
 kubectl get nodes -o wide
 
-# Check Prometheus scraping
-curl -u prometheus:<password> http://$MASTER_IP:30090/api/v1/targets | jq '.data.activeTargets[].health'
+# Check all monitoring pods on master node
+kubectl get pods -n monitoring -o wide
 
-# Check Lambda
-aws lambda invoke --function-name node-fleet-prod-autoscaler /tmp/out.json
-cat /tmp/out.json
+# Check Prometheus targets (all should be 'up')
+curl -s http://$MASTER_IP:30090/api/v1/targets | python3 -c \
+  'import sys,json; [print(t["labels"]["job"], t["health"]) for t in json.load(sys.stdin)["data"]["activeTargets"]]'
+
+# Check Lambda invoked recently
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Invocations \
+  --dimensions Name=FunctionName,Value=node-fleet-prod-autoscaler \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 3600 --statistics Sum --region ap-southeast-1
 
 # Full verification script
 bash scripts/verify-autoscaler-requirements.sh
 
-# Access Grafana
-echo "Grafana: http://$MASTER_IP:30300  (admin / check Secrets Manager)"
+# Access Grafana (password from Secrets Manager: node-fleet/grafana-admin-password)
+echo "Grafana: http://$MASTER_IP:30300"
 ```
 
 ---
