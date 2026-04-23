@@ -3,7 +3,7 @@
   "uid": "autoscaler-performance",
   "tags": ["autoscaler", "lambda", "performance", "node-fleet"],
   "timezone": "browser",
-  "schemaVersion": 16,
+  "schemaVersion": 36,
   "version": 0,
   "refresh": "1m",
   "panels": [
@@ -11,58 +11,74 @@
       "id": 1,
       "title": "Lambda Execution Duration",
       "type": "timeseries",
-      "datasource": "CloudWatch",
-      "gridPos": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      },
+      "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
       "targets": [
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "AWS/Lambda",
           "metricName": "Duration",
-          "dimensions": {
-            "FunctionName": "node-fleet-prod-autoscaler"
-          },
-          "statistics": ["Average", "p50", "p95", "p99"],
+          "dimensions": { "FunctionName": ["node-fleet-prod-autoscaler"] },
+          "statistic": "Average",
           "region": "ap-southeast-1",
-          "refId": "A"
-        }
-      ],
-      "yaxes": [
-        {
-          "format": "ms",
-          "label": "Duration (ms)"
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": true,
+          "refId": "A",
+          "legendFormat": "Avg Duration"
         },
         {
-          "format": "short"
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "namespace": "AWS/Lambda",
+          "metricName": "Duration",
+          "dimensions": { "FunctionName": ["node-fleet-prod-autoscaler"] },
+          "statistic": "p95",
+          "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": true,
+          "refId": "B",
+          "legendFormat": "p95 Duration"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "namespace": "AWS/Lambda",
+          "metricName": "Duration",
+          "dimensions": { "FunctionName": ["node-fleet-prod-autoscaler"] },
+          "statistic": "Maximum",
+          "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": true,
+          "refId": "C",
+          "legendFormat": "Max Duration"
         }
       ],
-      "xaxis": {
-        "mode": "time"
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
       }
     },
     {
       "id": 2,
       "title": "Lambda Invocation Count",
       "type": "stat",
-      "datasource": "CloudWatch",
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 6,
-        "h": 8
-      },
+      "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 8 },
       "targets": [
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "AWS/Lambda",
           "metricName": "Invocations",
-          "dimensions": {
-            "FunctionName": "node-fleet-prod-autoscaler"
-          },
-          "statistics": ["Sum"],
+          "dimensions": { "FunctionName": ["node-fleet-prod-autoscaler"] },
+          "statistic": "Sum",
           "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": true,
           "refId": "A"
         }
       ],
@@ -72,72 +88,67 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "value": 0,
-                "color": "green"
-              },
-              {
-                "value": 100,
-                "color": "yellow"
-              },
-              {
-                "value": 500,
-                "color": "red"
-              }
+              { "value": 0, "color": "green" },
+              { "value": 100, "color": "yellow" },
+              { "value": 500, "color": "red" }
             ]
           }
         }
       },
-      "options": {
-        "graphMode": "area",
-        "colorMode": "value"
-      }
+      "options": { "graphMode": "area", "colorMode": "value" }
     },
     {
       "id": 3,
       "title": "Scaling Decisions",
       "type": "piechart",
-      "datasource": "CloudWatch",
-      "gridPos": {
-        "x": 18,
-        "y": 0,
-        "w": 6,
-        "h": 8
-      },
+      "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 8 },
       "targets": [
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScaleUpEvents",
           "dimensions": {},
-          "statistics": ["Sum"],
+          "statistic": "Sum",
           "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": false,
           "refId": "A",
           "alias": "Scale Up"
         },
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScaleDownEvents",
           "dimensions": {},
-          "statistics": ["Sum"],
+          "statistic": "Sum",
           "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": false,
           "refId": "B",
           "alias": "Scale Down"
         },
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "AutoscalerInvocations",
           "dimensions": {},
-          "statistics": ["Sum"],
+          "statistic": "Sum",
           "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": false,
           "refId": "C",
           "alias": "Total Invocations"
         }
       ],
       "options": {
-        "legend": {
-          "display": true,
-          "placement": "bottom"
-        },
+        "legend": { "displayMode": "list", "placement": "bottom" },
         "pieType": "pie",
         "displayLabels": ["percent", "name"]
       }
@@ -146,54 +157,49 @@
       "id": 4,
       "title": "Node Join Latency",
       "type": "timeseries",
-      "datasource": "CloudWatch",
-      "gridPos": {
-        "x": 0,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      },
+      "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
       "targets": [
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "NodeJoinLatency",
           "dimensions": {},
-          "statistics": ["Average", "p50", "p95", "p99", "Maximum"],
+          "statistic": "Average",
           "region": "ap-southeast-1",
-          "refId": "A"
-        }
-      ],
-      "yaxes": [
-        {
-          "format": "ms",
-          "label": "Time to Ready (ms)"
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": false,
+          "refId": "A",
+          "legendFormat": "Avg Join Latency"
         },
         {
-          "format": "short"
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "namespace": "NodeFleet/Autoscaler",
+          "metricName": "NodeJoinLatency",
+          "dimensions": {},
+          "statistic": "Maximum",
+          "region": "ap-southeast-1",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": false,
+          "refId": "B",
+          "legendFormat": "Max Join Latency"
         }
       ],
-      "xaxis": {
-        "mode": "time"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        }
-      }
+      "fieldConfig": { "defaults": { "unit": "ms" } }
     },
     {
       "id": 5,
       "title": "Cost Savings Estimate",
       "type": "gauge",
-      "datasource": "Prometheus",
-      "gridPos": {
-        "x": 12,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "aws_autoscaling_savings_percentage{cluster=\"node-fleet\",job=\"cost-exporter\"}",
           "refId": "A",
           "legendFormat": "Savings vs Static Fleet (1×t3.medium + 5×t3.small on-demand)"
@@ -207,103 +213,75 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "value": 0,
-                "color": "red"
-              },
-              {
-                "value": 20,
-                "color": "yellow"
-              },
-              {
-                "value": 40,
-                "color": "green"
-              },
-              {
-                "value": 60,
-                "color": "blue"
-              }
+              { "value": 0, "color": "red" },
+              { "value": 20, "color": "yellow" },
+              { "value": 40, "color": "green" },
+              { "value": 60, "color": "blue" }
             ]
           }
         }
       },
-      "options": {
-        "showThresholdLabels": true,
-        "showThresholdMarkers": true
-      }
+      "options": { "showThresholdLabels": true, "showThresholdMarkers": true }
     },
     {
       "id": 6,
       "title": "Lambda Errors",
-      "type": "graph",
-      "datasource": "CloudWatch",
-      "gridPos": {
-        "x": 0,
-        "y": 16,
-        "w": 12,
-        "h": 6
-      },
+      "type": "timeseries",
+      "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
       "targets": [
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "AWS/Lambda",
           "metricName": "Errors",
-          "dimensions": {
-            "FunctionName": "node-fleet-prod-autoscaler"
-          },
-          "statistics": ["Sum"],
+          "dimensions": { "FunctionName": ["node-fleet-prod-autoscaler"] },
+          "statistic": "Sum",
           "region": "ap-southeast-1",
-          "refId": "A"
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": true,
+          "refId": "A",
+          "legendFormat": "Lambda Errors"
         },
         {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "namespace": "NodeFleet/Autoscaler",
           "metricName": "ScalingFailures",
           "dimensions": {},
-          "statistics": ["Sum"],
+          "statistic": "Sum",
           "region": "ap-southeast-1",
-          "refId": "B"
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "matchExact": false,
+          "refId": "B",
+          "legendFormat": "Scaling Failures"
         }
       ],
-      "yaxes": [
-        {
-          "format": "short",
-          "label": "Error Count"
-        },
-        {
-          "format": "short"
-        }
-      ]
+      "fieldConfig": { "defaults": { "unit": "short" } }
     },
     {
       "id": 7,
       "title": "Current Node Count",
       "type": "timeseries",
-      "datasource": "Prometheus",
-      "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 12,
-        "h": 6
-      },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "count(kube_node_info)",
-          "datasource": "Prometheus",
           "refId": "A",
-          "legendFormat": "Actual Nodes"
+          "legendFormat": "Total Nodes"
         },
         {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "expr": "count(kube_node_info{node!~\".*master.*\"})",
-          "datasource": "Prometheus",
           "refId": "B",
           "legendFormat": "Worker Nodes"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "min": 0
-        }
-      }
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 } }
     }
   ]
 }
