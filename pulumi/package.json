@@ -2,7 +2,7 @@
   "name": "node-fleet-infrastructure",
   "version": "1.0.0",
   "description": "NodeFleet K3s Autoscaler Infrastructure",
-  "main": "index.ts",
+  "main": "src/index.ts",
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist node_modules"

@@ -11,11 +11,28 @@ spec:
     metadata:
       labels:
         app: node-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: "/metrics"
     spec:
-      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
       containers:
         - name: node-exporter
           image: prom/node-exporter:v1.7.0
+          args:
+            - --path.rootfs=/host
           ports:
             - containerPort: 9100
-              hostPort: 9100
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: rootfs
+              mountPath: /host
+              readOnly: true
+      volumes:
+        - name: rootfs
+          hostPath:
+            path: /

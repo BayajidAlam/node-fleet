@@ -163,14 +163,25 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
             Resource: "*",
           },
           {
-            // Write EC2 actions scoped to node-fleet tagged resources
-            Sid: "EC2WriteTagged",
+            // RunInstances spans multiple resource types (key-pair, sg, subnet, instance)
+            // region-scoping is sufficient; terminate is protected by ResourceTag condition
+            Sid: "EC2Launch",
             Effect: "Allow",
             Action: [
               "ec2:RunInstances",
-              "ec2:TerminateInstances",
-              "ec2:CreateTags",
               "ec2:RequestSpotInstances",
+            ],
+            Resource: "*",
+            Condition: {
+              StringEquals: { "aws:RequestedRegion": r },
+            },
+          },
+          {
+            // TerminateInstances scoped to existing node-fleet tagged resources
+            Sid: "EC2Terminate",
+            Effect: "Allow",
+            Action: [
+              "ec2:TerminateInstances",
               "ec2:CancelSpotInstanceRequests",
             ],
             Resource: "*",
@@ -182,11 +193,15 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
             },
           },
           {
-            // Allow RunInstances to tag new instances on creation
-            Sid: "EC2RunInstancesTagging",
+            // RunInstances creates instance + volume + network-interface; all need CreateTags
+            Sid: "EC2CreateTagsOnLaunch",
             Effect: "Allow",
             Action: ["ec2:CreateTags"],
-            Resource: `arn:aws:ec2:${r}:${a}:instance/*`,
+            Resource: [
+              `arn:aws:ec2:${r}:${a}:instance/*`,
+              `arn:aws:ec2:${r}:${a}:volume/*`,
+              `arn:aws:ec2:${r}:${a}:network-interface/*`,
+            ],
             Condition: {
               StringEquals: { "ec2:CreateAction": "RunInstances" },
             },
@@ -200,6 +215,7 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
               "dynamodb:PutItem",
               "dynamodb:UpdateItem",
               "dynamodb:Query",
+              "dynamodb:Scan",
             ],
             Resource: [
               `arn:aws:dynamodb:${r}:${a}:table/${clusterName}-state`,
@@ -285,18 +301,22 @@ export const lambdaPolicy = new aws.iam.RolePolicy("lambda-policy", {
             },
           },
           {
-            // SSM SendCommand scoped to master node (by tag) and drain document only
-            Sid: "SSMDrainMaster",
+            // SSM document: ec2:ResourceTag condition doesn't apply to SSM resources — separate stmt
+            Sid: "SSMDrainDocument",
             Effect: "Allow",
             Action: ["ssm:SendCommand"],
-            Resource: [
-              `arn:aws:ssm:${r}::document/AWS-RunShellScript`,
-              `arn:aws:ec2:${r}:${a}:instance/*`,
-            ],
+            Resource: `arn:aws:ssm:${r}::document/AWS-RunShellScript`,
+          },
+          {
+            // SSM instance: scoped to master node by tag
+            Sid: "SSMDrainInstance",
+            Effect: "Allow",
+            Action: ["ssm:SendCommand"],
+            Resource: `arn:aws:ec2:${r}:${a}:instance/*`,
             Condition: {
-              StringEquals: {
-                "ec2:ResourceTag/Role": "k3s-master",
-                "ec2:ResourceTag/Project": "node-fleet",
+              StringLike: {
+                "ssm:resourceTag/Project": ["node-fleet"],
+                "ssm:resourceTag/Role": ["k3s-master"],
               },
             },
           },

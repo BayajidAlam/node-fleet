@@ -149,30 +149,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             raise e
 
     try:
-        # Step 1: Collect Prometheus metrics
-        logger.info("Step 1: Collecting metrics from Prometheus")
-        
-        # Get credentials (handles dynamic secret fetching)
-        prom_user, prom_pass = get_prometheus_credentials()
-        
-        metrics = collect_metrics(PROMETHEUS_URL, prom_user, prom_pass)
-        
-
-        
-        logger.info(f"Metrics collected: {metrics}")
-        
-        # Step 2: Acquire DynamoDB lock
-        logger.info("Step 2: Acquiring DynamoDB lock")
+        # Step 1: Acquire DynamoDB lock (before metrics — prevents two Lambdas both fetching then racing)
+        logger.info("Step 1: Acquiring DynamoDB lock")
         state_manager = StateManager(STATE_TABLE, CLUSTER_ID)
-        
+
         if not state_manager.acquire_lock():
             logger.warning("Could not acquire lock - another scaling operation in progress")
             return {
                 "statusCode": 200,
                 "body": "Skipped: Scaling already in progress"
             }
-        
+
         try:
+            # Step 2: Collect Prometheus metrics (inside lock — consistent snapshot)
+            logger.info("Step 2: Collecting metrics from Prometheus")
+            prom_user, prom_pass = get_prometheus_credentials()
+            metrics = collect_metrics(PROMETHEUS_URL, prom_user, prom_pass)
+            logger.info(f"Metrics collected: {metrics}")
             # Get current cluster state (includes metrics_history)
             current_state = state_manager.get_state()
             metric_node_count = int(metrics.get("node_count", 0))
@@ -199,7 +192,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             history = current_state.get("metrics_history", [])
             
-            # Step 2.5: Update metrics history with current reading
+            # Step 2.5: Update metrics history
             logger.info("Updating metrics history in state")
             state_manager.update_metrics_history(metrics)
 
@@ -215,14 +208,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     node_count=current_nodes
                 )
             
-            # Step 3: Decide scaling action (reactive + predictive + custom metrics)
+            # Step 3: Scaling decision (reactive + predictive + custom metrics)
             logger.info(f"Step 3: Evaluating scaling decision (current nodes: {current_nodes})")
             
             decision_engine = ScalingDecision(
                 min_nodes=MIN_NODES,
                 max_nodes=MAX_NODES,
                 current_nodes=current_nodes,
-                last_scale_time=current_state.get('last_scale_time', 0)
+                last_scale_time=current_state.get('last_scale_time', 0),
+                last_scale_action=current_state.get('last_scale_action', 'none')
             )
             
             # Collect custom application metrics if enabled
@@ -284,7 +278,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "body": f"No scaling needed. Metrics: {metrics}"
                 }
             
-            # Step 4: Execute EC2 scaling
+            # Step 4: Execute scaling
             logger.info(f"Step 4: Executing scaling action: {action['action']}")
             ec2_manager = EC2Manager(
                 worker_template_id=WORKER_LAUNCH_TEMPLATE_ID,
@@ -307,7 +301,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Update state in DynamoDB
             new_node_count = current_nodes + (action["nodes"] if action["action"] == "scale_up" else -action["nodes"])
-            state_manager.update_state(new_node_count)
+            state_manager.update_state(new_node_count, last_scale_action=action["action"])
             
             # Publish CloudWatch metrics
             node_join_latency = result.get('node_join_latency_ms')
@@ -319,7 +313,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 node_join_latency_ms=node_join_latency
             )
             
-            # Step 5: Send Slack notification
+            # Step 5: Notify
             logger.info("Step 5: Sending Slack notification")
             notification_message = format_notification(action, result, new_node_count, metrics)
             send_notification(notification_message)

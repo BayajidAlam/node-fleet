@@ -77,15 +77,11 @@ class StateManager:
                 raise
     
     def release_lock(self):
-        """Release the distributed lock"""
+        """Release the distributed lock by removing lock attributes (absent = free)."""
         try:
             self.table.update_item(
                 Key={'cluster_id': self.cluster_id},
-                UpdateExpression='SET scaling_in_progress = :false, lock_released_at = :now',
-                ExpressionAttributeValues={
-                    ':false': False,
-                    ':now': int(time.time())
-                }
+                UpdateExpression='REMOVE scaling_in_progress, lock_acquired_at, lock_expiry'
             )
             logger.info(f"Lock released for cluster {self.cluster_id}")
             
@@ -120,18 +116,19 @@ class StateManager:
             logger.error(f"Error getting state: {str(e)}")
             raise
     
-    def update_state(self, new_node_count: int):
+    def update_state(self, new_node_count: int, last_scale_action: str = "none"):
         """Update cluster state after scaling operation"""
         try:
             self.table.update_item(
                 Key={'cluster_id': self.cluster_id},
-                UpdateExpression='SET node_count = :count, last_scale_time = :time',
+                UpdateExpression='SET node_count = :count, last_scale_time = :time, last_scale_action = :action',
                 ExpressionAttributeValues={
                     ':count': new_node_count,
-                    ':time': int(time.time())
+                    ':time': int(time.time()),
+                    ':action': last_scale_action
                 }
             )
-            logger.info(f"State updated: node_count={new_node_count}")
+            logger.info(f"State updated: node_count={new_node_count}, last_scale_action={last_scale_action}")
             
         except ClientError as e:
             logger.error(f"Error updating state: {str(e)}")

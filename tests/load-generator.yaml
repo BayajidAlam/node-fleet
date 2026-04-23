@@ -14,11 +14,14 @@ spec:
         app: load-generator
     spec:
       containers:
-        - name: stress-ng
-          image: litmuschaos/stress-ng:2.6.0
+        - name: stress
+          image: polinux/stress:1.0.4
+          command: ["stress"]
+          args: ["--cpu", "1", "--timeout", "600s"]
           resources:
             requests:
-              cpu: "1000m" # Request 1 cpu (1 vCPU) per pod
+              cpu: "1000m"
               memory: "100Mi"
-          # Generate load: 1 cpu worker, 600s timeout
-          args: ["--cpu", "1", "--timeout", "600s"]
+            limits:
+              cpu: "1000m"
+              memory: "200Mi"

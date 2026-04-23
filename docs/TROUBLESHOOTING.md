@@ -36,9 +36,9 @@ aws lambda invoke \
 
 ### 1. Lambda Can't Reach Prometheus
 
-**Symptom**: Lambda logs show `ConnectionError: HTTPConnectionPool(host='10.0.11.x', port=30090)` or `requests.exceptions.ConnectTimeout`
+**Symptom**: `ConnectionError: HTTPConnectionPool(host='10.0.11.x', port=30090)` or `requests.exceptions.ConnectTimeout`
 
-**Cause**: Security group missing inbound rule for port 30090 from Lambda SG, OR Lambda not in the correct VPC/subnet.
+**Cause**: SG missing inbound :30090 from Lambda SG, OR Lambda not in correct VPC/subnet.
 
 **Fix**:
 ```bash
@@ -64,9 +64,9 @@ aws ec2 authorize-security-group-ingress \
 
 ### 2. Workers Not Joining Cluster
 
-**Symptom**: New EC2 instances launch (visible in AWS Console) but never appear in `kubectl get nodes`. Worker SSM logs show `Failed to find supervisor.conf` or `Error: token mismatch`.
+**Symptom**: EC2 instances launch but never appear in `kubectl get nodes`. SSM logs: `Failed to find supervisor.conf` or `Error: token mismatch`.
 
-**Cause**: K3s join token not in Secrets Manager (or wrong secret path) when worker first boots. Userdata only runs once — a failed token fetch means the worker never joins.
+**Cause**: K3s join token missing/wrong in Secrets Manager at boot. Userdata runs once — failed token fetch = worker never joins.
 
 **Fix**:
 ```bash
@@ -93,9 +93,9 @@ aws secretsmanager put-secret-value \
 
 ### 3. DynamoDB Lock Stuck
 
-**Symptom**: Lambda logs show `ConditionalCheckFailedException` on every invocation, scaling never happens. Or: Lambda crashed mid-run and left `scaling_in_progress=true`.
+**Symptom**: `ConditionalCheckFailedException` every invocation, scaling never happens. Lambda crashed leaving `scaling_in_progress=true`.
 
-**Cause**: Lambda crashed (timeout, exception) leaving the lock without releasing it. Lock expiry is 360s, so it auto-clears eventually — but if you need immediate fix:
+**Cause**: Lambda crashed (timeout/exception) without releasing lock. Auto-clears at 360s — force-release if urgent:
 
 **Fix**:
 ```bash
@@ -106,7 +106,7 @@ aws dynamodb get-item \
   --projection-expression 'scaling_in_progress, lock_acquired_at, lock_expiry' \
   --region ap-southeast-1
 
-# Manual release (only if you're sure no Lambda is currently scaling)
+# Manual release (only if sure no Lambda is currently scaling)
 aws dynamodb update-item \
   --table-name k3s-autoscaler-state \
   --key '{"cluster_id":{"S":"node-fleet-prod"}}' \
@@ -120,9 +120,9 @@ echo "Lock released"
 
 ### 4. Lambda Timeout During Scaling
 
-**Symptom**: CloudWatch shows Lambda invocation with `Task timed out after 60.00 seconds`. Instances may be launching but lock is held.
+**Symptom**: CloudWatch shows `Task timed out after 60.00 seconds`. Instances may be launching.
 
-**Cause**: Lambda hit the 60-second timeout. Common causes: Prometheus response slow, EC2 RunInstances slow, or node polling loop running too long.
+**Cause**: Lambda hit 60s limit. Common: Prometheus slow, EC2 RunInstances slow, node polling too long.
 
 **Fix**:
 ```bash
@@ -153,9 +153,9 @@ aws events enable-rule --name node-fleet-autoscaler-trigger --region ap-southeas
 
 ### 5. Windows Build Fails on Lambda
 
-**Symptom**: Lambda invocation fails with `Unable to import module 'autoscaler': No module named '_cffi_backend'` or `cannot import name 'AES'`.
+**Symptom**: `Unable to import module 'autoscaler': No module named '_cffi_backend'` or `cannot import name 'AES'`.
 
-**Cause**: `pip install` on Windows builds native C extensions (`.pyd` files) compiled for Windows. Lambda runs on Linux — these crash.
+**Cause**: `pip install` on Windows builds Windows-native `.pyd` files. Lambda runs Linux — crashes.
 
 **Fix**:
 ```bash
@@ -182,13 +182,13 @@ aws lambda update-function-code \
 
 ---
 
-### 6. Prometheus Shows 0 Metrics (No Data)
+### 6. Prometheus Shows 0 Metrics
 
-**Symptom**: Grafana dashboards show "No data", Lambda logs show `cpu=None` from Prometheus.
+**Symptom**: Grafana "No data", Lambda logs `cpu=None`.
 
-**Cause A**: `node-exporter` DaemonSet not deployed (not bundled in K3s).  
-**Cause B**: `kube-state-metrics` not running.  
-**Cause C**: Prometheus `static_configs` targets have wrong IP addresses.
+**Cause A**: `node-exporter` DaemonSet not deployed.
+**Cause B**: `kube-state-metrics` not running.
+**Cause C**: `static_configs` targets have wrong IPs.
 
 **Fix**:
 ```bash
@@ -214,9 +214,9 @@ kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP
 
 ### 7. Grafana Dashboards Blank
 
-**Symptom**: Grafana loads but all panels show "No data source found" or blank.
+**Symptom**: Grafana loads but panels show "No data source found" or blank.
 
-**Cause**: Grafana datasources ConfigMap or dashboards ConfigMap not applied.
+**Cause**: Datasources/dashboards ConfigMap not applied.
 
 **Fix**:
 ```bash
@@ -239,13 +239,13 @@ curl -u admin:<password> http://$MASTER_IP:30030/api/datasources | jq '.[].name'
 
 ---
 
-### 8. Scale-Down Not Happening (Expected But Not Triggered)
+### 8. Scale-Down Not Triggering
 
-**Symptom**: CPU and memory have been low for >15 minutes but no scale-down event.
+**Symptom**: CPU/memory low >15min, no scale-down event.
 
-**Cause A**: Cooldown period still active (600s after last scale-down).  
-**Cause B**: Window not complete (need 5 consecutive low readings = 10 minutes).  
-**Cause C**: One condition not met (e.g., memory briefly spiked above 50%).
+**Cause A**: Cooldown active (600s after last scale-down).
+**Cause B**: Window incomplete (need 5 consecutive low readings = 10min).
+**Cause C**: One condition briefly failed (e.g., memory spiked >50%).
 
 **Diagnose**:
 ```bash
@@ -265,11 +265,11 @@ aws logs filter-log-events \
 
 ---
 
-### 9. Spot Interruption Causes Brief Downtime
+### 9. Spot Interruption Causes Downtime
 
-**Symptom**: A worker terminates unexpectedly, pods restart on other nodes, brief latency spike.
+**Symptom**: Worker terminates unexpectedly, pods restart, brief latency spike.
 
-**Cause**: Spot interruption 2-minute warning window is too short if drain takes longer than 90s.
+**Cause**: 2-min warning window too short if drain >90s.
 
 **Fix**:
 ```bash
@@ -295,9 +295,9 @@ aws lambda update-function-configuration \
 
 ### 10. Drain Timeout / Node Not Terminating
 
-**Symptom**: A node is stuck in `SchedulingDisabled` (cordoned) but never terminated. Lambda logs show `Drain timed out after 300s`.
+**Symptom**: Node stuck in `SchedulingDisabled`. Lambda logs `Drain timed out after 300s`.
 
-**Cause**: A pod with a long `terminationGracePeriodSeconds` is preventing drain from completing.
+**Cause**: Pod with long `terminationGracePeriodSeconds` blocking drain.
 
 **Fix**:
 ```bash
@@ -327,7 +327,7 @@ aws dynamodb update-item \
 
 ### 11. EC2 Quota Exceeded
 
-**Symptom**: Lambda logs show `ClientError: An error occurred (InstanceLimitExceeded)`. No new nodes launch.
+**Symptom**: `ClientError: An error occurred (InstanceLimitExceeded)`. No new nodes launch.
 
 **Fix**:
 ```bash
@@ -352,13 +352,13 @@ aws service-quotas request-service-quota-increase \
 
 | Log Message | Meaning | Action |
 |-------------|---------|--------|
-| `"Lock acquired"` | Successful lock | Normal |
-| `"ConditionalCheckFailedException"` | Lock held by concurrent Lambda | Normal (usually) or stuck lock |
-| `"Decision: none, reason: cooldown"` | Within cooldown window | Normal |
-| `"Decision: none, reason: stable"` | All metrics below thresholds | Normal |
-| `"Skipping node: StatefulSet pod"` | Critical pod protection working | Normal |
+| `"Lock acquired"` | Lock success | Normal |
+| `"ConditionalCheckFailedException"` | Lock held by concurrent Lambda | Normal or stuck lock |
+| `"Decision: none, reason: cooldown"` | In cooldown window | Normal |
+| `"Decision: none, reason: stable"` | Metrics below thresholds | Normal |
+| `"Skipping node: StatefulSet pod"` | Critical pod protection | Normal |
 | `"Drain validated"` | Drain success, will terminate | Normal |
-| `"drained keyword missing"` | Drain output invalid | Check SSM command logs |
+| `"drained keyword missing"` | Drain output invalid | Check SSM logs |
 | `"Prometheus unreachable"` | Can't fetch metrics | Check VPC/SG, Prometheus pod |
 | `"Task timed out"` | Lambda >60s | Disable EventBridge, investigate |
 | `"InstanceLimitExceeded"` | EC2 quota hit | Request increase |

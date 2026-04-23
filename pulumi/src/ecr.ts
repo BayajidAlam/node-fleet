@@ -6,9 +6,9 @@ export const demoAppRepo = new aws.ecr.Repository("node-fleet-demo-app", {
     scanOnPush: true,
   },
   imageTagMutability: "MUTABLE",
-  encryptionConfiguration: {
+  encryptionConfigurations: [{
     encryptionType: "AES256",
-  },
+  }],
   tags: {
     Project: "node-fleet",
     Environment: "production",

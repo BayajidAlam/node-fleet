@@ -3,6 +3,7 @@ Scaling decision engine
 Evaluates metrics and determines scaling actions
 """
 
+import os
 import time
 import logging
 from typing import Dict, List, Optional
@@ -15,23 +16,25 @@ CPU_SCALE_DOWN_THRESHOLD = 30.0
 MEMORY_SCALE_UP_THRESHOLD = 75.0
 MEMORY_SCALE_DOWN_THRESHOLD = 50.0
 
-# Cooldown periods (seconds)
-SCALE_UP_COOLDOWN = 300  # 5 minutes
-SCALE_DOWN_COOLDOWN = 600  # 10 minutes
+# Cooldown periods — read from env vars so they're tunable without code changes
+SCALE_UP_COOLDOWN = int(os.environ.get("COOLDOWN_SCALE_UP", "300"))    # default 5 min
+SCALE_DOWN_COOLDOWN = int(os.environ.get("COOLDOWN_SCALE_DOWN", "600")) # default 10 min
 
 
 class ScalingDecision:
     """Evaluates metrics and decides scaling actions
-    
+
     Note: All node counts refer to WORKER nodes only (master excluded).
     Cluster minimum: 1 master + 2 workers = 3 total nodes
     """
-    
-    def __init__(self, min_nodes: int, max_nodes: int, current_nodes: int, last_scale_time: int):
-        self.min_nodes = min_nodes  # Minimum WORKER nodes (default: 2)
-        self.max_nodes = max_nodes  # Maximum WORKER nodes (default: 10)
-        self.current_nodes = current_nodes  # Current WORKER nodes (excludes master)
+
+    def __init__(self, min_nodes: int, max_nodes: int, current_nodes: int,
+                 last_scale_time: int, last_scale_action: str = "none"):
+        self.min_nodes = min_nodes
+        self.max_nodes = max_nodes
+        self.current_nodes = current_nodes
         self.last_scale_time = last_scale_time
+        self.last_scale_action = last_scale_action  # "scale_up" | "scale_down" | "none"
     
     def evaluate(self, metrics: Dict[str, float], history: List[Dict] = None, custom_metrics: Dict = None) -> Dict:
         """
@@ -90,9 +93,9 @@ class ScalingDecision:
             scale_up_reasons.extend([f"Custom: {r}" for r in custom_reasons])
         
         if scale_up_reasons:
-            if time_since_last_scale < SCALE_UP_COOLDOWN:
-                logger.info(f"Scale-up needed but in cooldown period ({time_since_last_scale}s)")
-                return {"action": "none", "nodes": 0, "reason": "In cooldown"}
+            if self.last_scale_action == "scale_up" and time_since_last_scale < SCALE_UP_COOLDOWN:
+                logger.info(f"Scale-up needed but in scale-up cooldown ({time_since_last_scale}s < {SCALE_UP_COOLDOWN}s)")
+                return {"action": "none", "nodes": 0, "reason": "In scale-up cooldown"}
             
             if self.current_nodes >= self.max_nodes:
                 return {"action": "none", "nodes": 0, "reason": f"At max capacity ({self.max_nodes})"}
@@ -121,9 +124,9 @@ class ScalingDecision:
         )
         
         if sustained_low_util:
-            if time_since_last_scale < SCALE_DOWN_COOLDOWN:
-                logger.info(f"Scale-down possible but in cooldown ({time_since_last_scale}s)")
-                return {"action": "none", "nodes": 0, "reason": "In cooldown"}
+            if self.last_scale_action == "scale_down" and time_since_last_scale < SCALE_DOWN_COOLDOWN:
+                logger.info(f"Scale-down possible but in scale-down cooldown ({time_since_last_scale}s < {SCALE_DOWN_COOLDOWN}s)")
+                return {"action": "none", "nodes": 0, "reason": "In scale-down cooldown"}
             
             if self.current_nodes <= self.min_nodes:
                 return {"action": "none", "nodes": 0, "reason": "At min capacity"}

@@ -62,19 +62,26 @@ echo ""
 
 # Deploy Prometheus
 echo "[4/6] Deploying Prometheus..."
-kubectl apply -f gitops/infrastructure/prometheus/
+kubectl apply -f gitops/infrastructure/prometheus-deployment.yaml
+kubectl apply -f gitops/infrastructure/prometheus-basic-auth.yaml || true
+kubectl apply -f gitops/monitoring/prometheus-rbac.yaml || true
+kubectl apply -f gitops/monitoring/node-exporter.yaml || true
+kubectl apply -f gitops/monitoring/kube-state-metrics.yaml || true
+kubectl apply -f gitops/monitoring/alerts.yaml || true
 echo "  ✓ Prometheus deployed"
 
-# Deploy Grafana  
+# Deploy Grafana
 echo ""
 echo "[5/6] Deploying Grafana..."
-kubectl apply -f gitops/infrastructure/grafana/
+kubectl apply -f gitops/infrastructure/grafana.yaml
 echo "  ✓ Grafana deployed"
 
 # Deploy demo application
 echo ""
 echo "[6/6] Deploying demo application..."
-kubectl apply -f gitops/apps/demo-app/
+kubectl apply -f gitops/apps/demo-app/deployment.yaml
+kubectl apply -f gitops/apps/demo-app/service.yaml
+kubectl apply -f gitops/apps/demo-app/autoscaler.yaml || true
 echo "  ✓ Demo app deployed"
 
 # Wait for pods to be ready

@@ -234,3 +234,14 @@ Prometheus: NodePort 30090, basic auth, scrape 15s, retention 7d.
 - [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md)
 - [docs/COST_ANALYSIS.md](docs/COST_ANALYSIS.md)
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+## Documentation Style
+- Use 'caveman-compressed' format for skill files and internal docs (terse, keyword-heavy, minimal grammar) to save tokens
+- When asked to 'compress' files, compress ALL specified files directly rather than providing an assessment first
+
+## Diagrams
+- When user asks to 'add a visual' to a doc that already has ASCII art, REPLACE the ASCII art rather than moving or duplicating images
+- For PNG diagram generation, verify fonts load correctly and shapes don't overlap before finalizing
+
+## Requirements Verification
+- For doc/requirements audits, systematically cross-check every claim against source requirements (e.g., SDB1) and fix inconsistencies across ALL related files in one pass

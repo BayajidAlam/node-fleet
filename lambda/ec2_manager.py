@@ -161,7 +161,7 @@ class EC2Manager:
         draining = []
         for instance in targets:
             instance_id = instance["InstanceId"]
-            node_name = instance.get("PrivateDnsName", instance_id)
+            node_name = instance.get("PrivateDnsName", instance_id).split(".")[0]
 
             # Guard: skip nodes hosting StatefulSet pods, single-replica deployment pods, or kube-system non-DaemonSet pods
             has_critical, critical_reason = self._check_critical_pods(master_instance_id, node_name)
@@ -316,7 +316,7 @@ class EC2Manager:
                 return {"success": False, "action": "skipped", "node": instance_id, "reason": "Instance not found"}
 
             instance = reservations[0]["Instances"][0]
-            node_name = instance.get("PrivateDnsName", instance_id)
+            node_name = instance.get("PrivateDnsName", instance_id).split(".")[0]
 
             # Tag so future scans skip this instance
             self.ec2.create_tags(
@@ -526,10 +526,13 @@ class EC2Manager:
         Poll SSM for command result.
         Returns (status_string, stdout_output).
         """
-        response = self.ssm.get_command_invocation(
-            CommandId=command_id,
-            InstanceId=master_instance_id,
-        )
+        try:
+            response = self.ssm.get_command_invocation(
+                CommandId=command_id,
+                InstanceId=master_instance_id,
+            )
+        except self.ssm.exceptions.InvocationDoesNotExist:
+            return "Pending", ""
         status = response.get("Status", "Pending")
         output = response.get("StandardOutputContent", "") + response.get("StandardErrorContent", "")
         return status, output
