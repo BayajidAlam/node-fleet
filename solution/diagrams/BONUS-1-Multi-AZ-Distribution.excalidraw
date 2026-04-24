@@ -95,7 +95,8 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "ap-southeast-1a\nprivate-subnet-1: 10.0.11.0/24\n\nWorkers launched here\nwhen AZ-1 count < AZ-2\nNAT gateway provides\ninternet for Secrets Manager",
+      "text": "ap-southeast-1a\nprivate-subnet-1
+workerSubnet AZ-1\n\nWorkers launched here\nwhen AZ-1 count < AZ-2\nNAT gateway provides\ninternet for Secrets Manager",
       "fontSize": 12,
       "fontFamily": 1,
       "textAlign": "center",
@@ -162,7 +163,8 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "ap-southeast-1b\nprivate-subnet-2: 10.0.12.0/24\n\nWorkers launched here\nwhen AZ-2 count < AZ-1\nSeparate NAT gateway\nfor AZ isolation",
+      "text": "ap-southeast-1b\nprivate-subnet-2
+workerSubnet AZ-2\n\nWorkers launched here\nwhen AZ-2 count < AZ-1\nSeparate NAT gateway\nfor AZ isolation",
       "fontSize": 12,
       "fontFamily": 1,
       "textAlign": "center",

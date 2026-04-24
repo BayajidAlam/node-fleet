@@ -229,14 +229,14 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "DynamoDB conditional write:\nattribute_not_exists(\n  scaling_in_progress)\nOR lock_expiry < :now",
+      "text": "DynamoDB conditional write:\nattribute_not_exists(\n  scaling_in_progress)\nOR lock_acquired_at < :expired",
       "fontSize": 12,
       "fontFamily": 1,
       "textAlign": "center",
       "verticalAlign": "middle",
       "baseline": 12,
       "containerId": "ddb",
-      "originalText": "DynamoDB conditional write:\nattribute_not_exists(\n  scaling_in_progress)\nOR lock_expiry < :now"
+      "originalText": "DynamoDB conditional write:\nattribute_not_exists(\n  scaling_in_progress)\nOR lock_acquired_at < :expired"
     },
     {
       "id": "ok",
