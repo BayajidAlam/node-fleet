@@ -118,6 +118,7 @@ data:
       folder: Node-Fleet
       type: file
       disableDeletion: false
+      allowUiUpdates: true
       updateIntervalSeconds: 30
       options:
         path: /var/lib/grafana/dashboards

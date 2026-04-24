@@ -40,6 +40,25 @@ export const masterPolicy = new aws.iam.RolePolicy("master-policy", {
           Resource: "*",
         },
         {
+          Sid: "CloudWatchRead",
+          Effect: "Allow",
+          Action: [
+            "cloudwatch:ListMetrics",
+            "cloudwatch:GetMetricStatistics",
+            "cloudwatch:GetMetricData",
+            "cloudwatch:DescribeAlarms",
+            "logs:DescribeLogGroups",
+            "logs:DescribeLogStreams",
+            "logs:GetLogEvents",
+            "logs:StartQuery",
+            "logs:StopQuery",
+            "logs:GetQueryResults",
+            "ec2:DescribeRegions",
+            "tag:GetResources",
+          ],
+          Resource: "*",
+        },
+        {
           // Scoped to only the node-fleet secrets this host needs
           Sid: "SecretsManagerNodeFleet",
           Effect: "Allow",

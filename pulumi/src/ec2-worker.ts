@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as fs from "fs";
-import { publicSubnet1, publicSubnet2 } from "./vpc";
+import { privateSubnet1, privateSubnet2 } from "./vpc";
 import { workerSg } from "./security-groups";
 import { workerInstanceProfile } from "./iam";
 import { keyPair } from "./keypair";
@@ -126,7 +126,7 @@ export const workerSpotTemplate = new aws.ec2.LaunchTemplate(
 );
 
 // BONUS: Multi-AZ subnet list for zone-aware distribution
-export const workerSubnets = [publicSubnet1.id, publicSubnet2.id];
+export const workerSubnets = [privateSubnet1.id, privateSubnet2.id];
 export const workerLaunchTemplateId = workerLaunchTemplate.id;
 export const workerSpotTemplateId = workerSpotTemplate.id;
 
@@ -136,7 +136,7 @@ export const initialWorker1 = new aws.ec2.Instance("initial-worker-1", {
   ami: ubuntuAmi.then((ami) => ami.id),
   instanceType: "t3.small",
   keyName: keyPair.keyName,
-  subnetId: publicSubnet1.id, // AZ-1
+  subnetId: privateSubnet1.id, // AZ-1 private
   vpcSecurityGroupIds: [workerSg.id],
   iamInstanceProfile: workerInstanceProfile.name,
   userData: workerUserData,
@@ -160,7 +160,7 @@ export const initialWorker2 = new aws.ec2.Instance("initial-worker-2", {
   ami: ubuntuAmi.then((ami) => ami.id),
   instanceType: "t3.small",
   keyName: keyPair.keyName,
-  subnetId: publicSubnet2.id, // AZ-2 (different AZ for HA)
+  subnetId: privateSubnet2.id, // AZ-2 private
   vpcSecurityGroupIds: [workerSg.id],
   iamInstanceProfile: workerInstanceProfile.name,
   userData: workerUserData,

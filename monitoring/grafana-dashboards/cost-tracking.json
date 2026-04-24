@@ -24,7 +24,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"})",
           "refId": "A"
         }
       ],
@@ -48,7 +48,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 24",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"}) * 24",
           "refId": "A"
         }
       ],
@@ -72,7 +72,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"}) * 730",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"}) * 730",
           "refId": "A"
         }
       ],
@@ -147,7 +147,7 @@
       },
       "targets": [
         {
-          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+          "expr": "sum(aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"})",
           "legendFormat": "Current Cost/Hour",
           "refId": "A"
         },
@@ -185,7 +185,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (instance_type) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+          "expr": "sum by (instance_type) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"})",
           "format": "time_series",
           "refId": "A"
         }
@@ -209,7 +209,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+          "expr": "sum by (lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"})",
           "format": "time_series",
           "refId": "A"
         }
@@ -263,11 +263,13 @@
       },
       "targets": [
         {
-          "expr": "count by (instance_type, lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\"})",
+          "expr": "count by (instance_type, lifecycle) (aws_ec2_instance_cost_per_hour{cluster=\"node-fleet\",job=\"cost-exporter\"})",
           "format": "table",
+          "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "transformations": []
     }
   ]
 }

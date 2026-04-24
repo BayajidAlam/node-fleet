@@ -66,8 +66,8 @@
       },
       "targets": [
         {
-          "expr": "avg(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) * 100",
-          "legendFormat": "CPU Usage %",
+          "expr": "avg by(instance) (rate(node_cpu_seconds_total{mode!=\"idle\",job=\"kubernetes-pods\"}[5m])) * 100",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
@@ -99,8 +99,8 @@
       },
       "targets": [
         {
-          "expr": "(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
-          "legendFormat": "Memory Usage %",
+          "expr": "(1 - (node_memory_MemAvailable_bytes{job=\"kubernetes-pods\"} / node_memory_MemTotal_bytes{job=\"kubernetes-pods\"})) * 100",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
@@ -132,12 +132,12 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(node_network_receive_bytes_total[5m])) / 1024 / 1024",
+          "expr": "sum(rate(node_network_receive_bytes_total{job=\"kubernetes-pods\"}[5m])) / 1024 / 1024",
           "legendFormat": "Receive MB/s",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(node_network_transmit_bytes_total[5m])) / 1024 / 1024",
+          "expr": "sum(rate(node_network_transmit_bytes_total{job=\"kubernetes-pods\"}[5m])) / 1024 / 1024",
           "legendFormat": "Transmit MB/s",
           "refId": "B"
         }
@@ -168,12 +168,12 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(node_disk_read_bytes_total[5m])) / 1024 / 1024",
+          "expr": "sum(rate(node_disk_read_bytes_total{job=\"kubernetes-pods\"}[5m])) / 1024 / 1024",
           "legendFormat": "Read MB/s",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(node_disk_written_bytes_total[5m])) / 1024 / 1024",
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"kubernetes-pods\"}[5m])) / 1024 / 1024",
           "legendFormat": "Write MB/s",
           "refId": "B"
         }

@@ -128,9 +128,9 @@ if [ "$SKIP_MONITORING" = false ]; then
     warn "KUBECONFIG not found at /tmp/k3s-kubeconfig.yaml, skipping monitoring re-apply"
   fi
 
-  # Configure Grafana dashboards remotely
+  # Configure Grafana dashboards
   info "Configuring Grafana CloudWatch datasource and dashboards..."
-  MASTER_IP="$MASTER_IP" bash "$SCRIPT_DIR/scripts/fix-dashboards-remote.sh" "$MASTER_IP" "$SSH_KEY"
+  node "$SCRIPT_DIR/monitoring/fix-grafana.js" "$MASTER_IP"
   success "Grafana configured"
 else
   warn "STEP 4/5: Skipping monitoring configuration (--skip-monitoring)"
