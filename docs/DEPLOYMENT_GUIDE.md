@@ -12,7 +12,7 @@ Hard-won from production. Skipping these wastes hours.
 
 3. **Disable EventBridge before debugging Lambda** — If Lambda has a bug (e.g., sees 0 nodes), it fires every 2 minutes and spins up instances. Disable EventBridge immediately when debugging.
 
-4. **Use `static_configs` for Prometheus** — `kubernetes_sd_configs` requires ClusterRole RBAC to list K8s nodes. Without it, all targets show `0/0`. Use `static_configs` with known worker IPs.
+4. **Prometheus uses `kubernetes_sd_configs`** — Auto-discovers nodes via K8s API. Node-exporter metrics come from pod IPs (job=`kubernetes-pods`), not node IPs directly. Workers in private subnets cannot be scraped on port 9100 at node IP — scraping works via pod IP only.
 
 5. **Deploy `node-exporter` DaemonSet manually** — Not bundled in K3s. Without it, Prometheus has no CPU/memory metrics.
 
@@ -25,6 +25,18 @@ Hard-won from production. Skipping these wastes hours.
 9. **Install FluxCD BEFORE running deploy.sh** — FluxCD manages K8s manifests via GitOps. Without it, gitops auto-reconciliation does not work and changes to gitops/ won't apply automatically.
 
 10. **Grafana and Prometheus MUST run on master node** — Workers are auto-scaled and can be terminated. Without `nodeSelector: node-role.kubernetes.io/control-plane: "true"` on both deployments, they may land on workers and lose CloudWatch IAM access. The gitops manifests already have this set.
+
+11. **Pulumi state .attrs files can corrupt** — If Pulumi fails with `invalid character '\x00'`, delete `~/.pulumi/stacks/<project>/<stack>.json.attrs` and `.bak.attrs`. These go all-null on interrupted deployments.
+
+12. **Pulumi pending operations block re-deploys** — Interrupted `pulumi up` leaves `pending_operations` in state. Fix: `pulumi stack export > state.json`, remove `pending_operations` array with `node -e`, `pulumi stack import`. Then `pulumi refresh --yes` before retrying.
+
+13. **SSH and K3s API (6443) blocked by default** — Master security group only allows SSH/6443 from VPC (`10.0.0.0/16`). For external access (deploy from laptop), add `0.0.0.0/0` rules manually after `pulumi up`.
+
+14. **Pulumi passphrase needed for deploy.sh** — `deploy.sh` calls `pulumi stack output` to resolve Lambda/S3 names. Without `PULUMI_CONFIG_PASSPHRASE` set, outputs fail silently. Run: `export PULUMI_CONFIG_PASSPHRASE="<passphrase>"` before `./deploy.sh`.
+
+15. **K3s TLS cert excludes public IP** — Fresh K3s install generates cert for private IP only. kubectl from outside fails with x509 error. Fix on master: add `tls-san: [<public-ip>]` to `/etc/rancher/k3s/config.yaml` and `systemctl restart k3s`.
+
+16. **Grafana fix script requires Node.js** — `monitoring/fix-grafana.js` replaces the old bash script (which needed `jq` and worked only on master). Run from local machine: `node monitoring/fix-grafana.js <master-ip>`.
 
 ---
 
@@ -73,6 +85,9 @@ aws configure set region ap-southeast-1
 cd pulumi
 npm install
 
+# Set passphrase (required for encrypted config values)
+export PULUMI_CONFIG_PASSPHRASE="<your-passphrase>"
+
 # Preview changes first — always
 pulumi preview
 
@@ -86,11 +101,44 @@ echo "Master IP: $MASTER_IP"
 cd ..
 ```
 
-### Step 3 — Set Up K3s Master
+> **If pulumi up fails with `invalid character '\x00'`:** delete `~/.pulumi/stacks/node-fleet/dev.json.attrs` then retry.
+>
+> **If pulumi up fails with "pending operations":** run `pulumi stack export > s.json`, edit `s.json` to set `pending_operations: []`, then `pulumi stack import --file s.json && pulumi refresh --yes`.
+
+### Step 3 — Open Security Group for External Access
+
+After `pulumi up`, master security group only allows SSH/6443 from VPC. Open for external access:
+
+```bash
+# Get master security group ID
+MASTER_SG=$(aws ec2 describe-instances \
+  --filters "Name=tag:Role,Values=k3s-master" "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+  --output text --region ap-southeast-1)
+
+# Allow SSH from internet
+aws ec2 authorize-security-group-ingress \
+  --group-id $MASTER_SG --protocol tcp --port 22 --cidr 0.0.0.0/0 \
+  --region ap-southeast-1
+
+# Allow K3s API from internet (for kubectl)
+aws ec2 authorize-security-group-ingress \
+  --group-id $MASTER_SG --protocol tcp --port 6443 --cidr 0.0.0.0/0 \
+  --region ap-southeast-1
+```
+
+### Step 4 — Set Up K3s Master
 
 ```bash
 # SSH to master
 ssh -i node-fleet-key.pem ubuntu@$MASTER_IP
+
+# Add TLS SAN for public IP (required for kubectl from outside)
+sudo mkdir -p /etc/rancher/k3s
+echo "tls-san:
+  - $MASTER_IP" | sudo tee /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s
+sleep 10
 
 # On master: run setup script
 ./k3s/master-setup.sh
@@ -104,7 +152,7 @@ kubectl get nodes
 exit
 ```
 
-### Step 4 — Store K3s Token (CRITICAL: do BEFORE launching workers)
+### Step 5 — Store K3s Token (CRITICAL: do BEFORE launching workers)
 
 ```bash
 # Get token from master
@@ -123,7 +171,7 @@ aws secretsmanager get-secret-value \
   --query SecretString --output text
 ```
 
-### Step 5 — Install FluxCD (GitOps)
+### Step 6 — Install FluxCD (GitOps)
 
 FluxCD auto-reconciles K8s manifests from the GitHub repo every 10 minutes.
 
@@ -136,9 +184,12 @@ sudo k3s kubectl get kustomizations -A   # should show apps/infrastructure/monit
 exit
 ```
 
-### Step 6 — Deploy Lambda, Monitoring, and Grafana Dashboards
+### Step 7 — Deploy Lambda, Monitoring, and Grafana Dashboards
 
 ```bash
+# Set passphrase before running deploy.sh
+export PULUMI_CONFIG_PASSPHRASE="<your-passphrase>"
+
 # Full deploy: Lambda + monitoring stack + Grafana dashboard import
 ./deploy.sh $MASTER_IP
 
@@ -150,9 +201,11 @@ The deploy script does:
 1. Builds Lambda zip (Linux wheels) and deploys to `node-fleet-prod-autoscaler`
 2. Creates monitoring namespace + `grafana-dashboards` ConfigMap from JSON files
 3. Deploys Prometheus, Grafana, cost-exporter via gitops manifests
-4. Runs `fix-grafana-dashboards.sh` — dynamically resolves Grafana datasource UIDs and imports all 4 dashboards with correct UIDs (handles fresh Grafana installs where UIDs auto-generate)
+4. Runs `monitoring/fix-grafana.js` — resolves datasource UIDs, imports all 4 dashboards into Node-Fleet folder
 
-### Step 7 — Fix EventBridge Rate (verify after pulumi up)
+> **If Grafana login fails after deploy:** Run `kubectl exec -n monitoring $(kubectl get pod -n monitoring -l app=grafana -o name) -- grafana cli admin reset-admin-password Admin@123` then restart pod.
+
+### Step 8 — Fix EventBridge Rate (verify after pulumi up)
 
 `pulumi up` sometimes deploys `rate(5 minutes)` due to state drift. Verify and fix:
 
@@ -169,7 +222,7 @@ aws events put-rule \
   --region ap-southeast-1
 ```
 
-### Step 8 — Verify Everything
+### Step 9 — Verify Everything
 
 ```bash
 # Check K3s nodes (should show master + workers)
