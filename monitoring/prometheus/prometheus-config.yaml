@@ -47,3 +47,9 @@ data:
           - source_labels: [__meta_kubernetes_service_label_app]
             action: keep
             regex: node-exporter
+
+      # Dedicated job so cost-exporter metrics carry job="cost-exporter"
+      # (kubernetes-pods job would label them job="kubernetes-pods" — dashboard queries would fail)
+      - job_name: 'cost-exporter'
+        static_configs:
+          - targets: ['cost-exporter.monitoring.svc.cluster.local:9100']

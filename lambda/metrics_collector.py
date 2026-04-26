@@ -20,7 +20,7 @@ QUERIES = {
     "cpu_usage": 'avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100',
     "memory_usage": '(1 - avg(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100',
     "pending_pods": 'sum(kube_pod_status_phase{phase="Pending"})',
-    "node_count": 'count(up{job="node-exporter"}) - 1',  # Count node-exporter targets minus master
+    "node_count": 'count(kube_node_info) - 1',  # K8s API node count minus master; more reliable than node-exporter up metric
     "network_receive_mbps": 'sum(rate(node_network_receive_bytes_total{device!~"lo|veth.*"}[5m])) / 1024 / 1024',
     "network_transmit_mbps": 'sum(rate(node_network_transmit_bytes_total{device!~"lo|veth.*"}[5m])) / 1024 / 1024',
     "disk_read_mbps": 'sum(rate(node_disk_read_bytes_total[5m])) / 1024 / 1024',

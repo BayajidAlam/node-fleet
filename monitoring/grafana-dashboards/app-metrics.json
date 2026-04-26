@@ -1,7 +1,11 @@
 {
   "title": "Application Metrics",
   "uid": "app-metrics",
-  "tags": ["application", "demo-app", "node-fleet"],
+  "tags": [
+    "application",
+    "demo-app",
+    "node-fleet"
+  ],
   "timezone": "browser",
   "schemaVersion": 16,
   "version": 0,
@@ -12,10 +16,15 @@
       "title": "API Request Rate (QPS)",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=\"demo-app\"}[1m]))",
+          "expr": "sum(rate(http_requests_total{app=\"demo-app\"}[1m]))",
           "legendFormat": "Requests/sec",
           "refId": "A"
         }
@@ -26,9 +35,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 100, "color": "yellow" },
-              { "value": 500, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 100,
+                "color": "yellow"
+              },
+              {
+                "value": 500,
+                "color": "red"
+              }
             ]
           }
         }
@@ -39,20 +57,25 @@
       "title": "API Latency (p50 / p95 / p99)",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"demo-app\"}[5m])) * 1000",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"demo-app\"}[5m]))) * 1000",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"demo-app\"}[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"demo-app\"}[5m]))) * 1000",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"demo-app\"}[5m])) * 1000",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"demo-app\"}[5m]))) * 1000",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -63,9 +86,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 1000, "color": "yellow" },
-              { "value": 2000, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              },
+              {
+                "value": 2000,
+                "color": "red"
+              }
             ]
           }
         }
@@ -76,15 +108,20 @@
       "title": "Error Rate (%)",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
-          "expr": "(sum(rate(http_requests_total{job=\"demo-app\",status=~\"5..\"}[2m])) or vector(0)) / sum(rate(http_requests_total{job=\"demo-app\"}[2m])) * 100",
+          "expr": "(sum(rate(http_requests_total{app=\"demo-app\",status=~\"5..\"}[2m])) or vector(0)) / sum(rate(http_requests_total{app=\"demo-app\"}[2m])) * 100",
           "legendFormat": "5xx Error Rate",
           "refId": "A"
         },
         {
-          "expr": "(sum(rate(http_requests_total{job=\"demo-app\",status=~\"4..\"}[2m])) or vector(0)) / sum(rate(http_requests_total{job=\"demo-app\"}[2m])) * 100",
+          "expr": "(sum(rate(http_requests_total{app=\"demo-app\",status=~\"4..\"}[2m])) or vector(0)) / sum(rate(http_requests_total{app=\"demo-app\"}[2m])) * 100",
           "legendFormat": "4xx Error Rate",
           "refId": "B"
         }
@@ -93,14 +130,25 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 1, "color": "yellow" },
-              { "value": 5, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 5,
+                "color": "red"
+              }
             ]
+          },
+          "custom": {
+            "thresholdsStyle": {"mode": "line"}
           }
         }
       }
@@ -110,10 +158,15 @@
       "title": "Application Queue Depth",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
-          "expr": "app_queue_depth{queue=\"default\"}",
+          "expr": "sum(app_queue_depth{app=\"demo-app\",queue=\"default\"})",
           "legendFormat": "Queue Depth",
           "refId": "A"
         }
@@ -124,15 +177,26 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 100, "color": "yellow" },
-              { "value": 1000, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 100,
+                "color": "yellow"
+              },
+              {
+                "value": 1000,
+                "color": "red"
+              }
             ]
           }
         }
       },
       "options": {
-        "thresholdsStyle": { "mode": "line" }
+        "thresholdsStyle": {
+          "mode": "line"
+        }
       }
     },
     {
@@ -140,10 +204,15 @@
       "title": "Current Error Rate (Gauge)",
       "type": "gauge",
       "datasource": "Prometheus",
-      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 6 },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
-          "expr": "(sum(rate(http_requests_total{job=\"demo-app\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_requests_total{job=\"demo-app\"}[5m])) * 100",
+          "expr": "(sum(rate(http_requests_total{app=\"demo-app\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_requests_total{app=\"demo-app\"}[5m])) * 100",
           "refId": "A"
         }
       ],
@@ -155,9 +224,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 1, "color": "yellow" },
-              { "value": 5, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 5,
+                "color": "red"
+              }
             ]
           }
         }
@@ -168,10 +246,15 @@
       "title": "Current p95 Latency (Gauge)",
       "type": "gauge",
       "datasource": "Prometheus",
-      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 6 },
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"demo-app\"}[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"demo-app\"}[5m]))) * 1000",
           "refId": "A"
         }
       ],
@@ -183,9 +266,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 1000, "color": "yellow" },
-              { "value": 2000, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              },
+              {
+                "value": 2000,
+                "color": "red"
+              }
             ]
           }
         }
@@ -196,10 +288,15 @@
       "title": "Current Queue Depth (Gauge)",
       "type": "gauge",
       "datasource": "Prometheus",
-      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 6 },
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
-          "expr": "app_queue_depth{queue=\"default\"}",
+          "expr": "sum(app_queue_depth{app=\"demo-app\",queue=\"default\"})",
           "refId": "A"
         }
       ],
@@ -211,9 +308,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 100, "color": "yellow" },
-              { "value": 1000, "color": "red" }
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 100,
+                "color": "yellow"
+              },
+              {
+                "value": 1000,
+                "color": "red"
+              }
             ]
           }
         }

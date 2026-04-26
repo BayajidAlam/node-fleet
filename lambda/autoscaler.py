@@ -102,8 +102,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
         confirmed_ready = _ec2_manager_early.check_pending_scale_ups(_state_manager_early)
         if confirmed_ready:
-            logger.info(f"{len(confirmed_ready)} node(s) confirmed Ready: {confirmed_ready}")
+            instance_ids = [n["instance_id"] for n in confirmed_ready]
+            logger.info(f"{len(confirmed_ready)} node(s) confirmed Ready: {instance_ids}")
             send_notification(f"🟢 Scale-up complete: {len(confirmed_ready)} node(s) joined and are Ready")
+            for node in confirmed_ready:
+                latency_ms = node["join_latency_ms"]
+                logger.info(f"Publishing NodeJoinLatency={latency_ms}ms for {node['instance_id']}")
+                cloudwatch.put_metric_data(
+                    Namespace="NodeFleet/Autoscaler",
+                    MetricData=[{
+                        "MetricName": "NodeJoinLatency",
+                        "Value": latency_ms,
+                        "Unit": "Milliseconds",
+                        "Timestamp": datetime.now(timezone.utc),
+                    }]
+                )
     except Exception as e:
         logger.warning(f"Failed to check pending async operations (non-fatal): {e}")
 

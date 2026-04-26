@@ -93,8 +93,8 @@ class ScalingDecision:
             scale_up_reasons.extend([f"Custom: {r}" for r in custom_reasons])
         
         if scale_up_reasons:
-            if self.last_scale_action == "scale_up" and time_since_last_scale < SCALE_UP_COOLDOWN:
-                logger.info(f"Scale-up needed but in scale-up cooldown ({time_since_last_scale}s < {SCALE_UP_COOLDOWN}s)")
+            if time_since_last_scale < SCALE_UP_COOLDOWN:
+                logger.info(f"Scale-up needed but in cooldown after {self.last_scale_action} ({time_since_last_scale}s < {SCALE_UP_COOLDOWN}s)")
                 return {"action": "none", "nodes": 0, "reason": "In scale-up cooldown"}
             
             if self.current_nodes >= self.max_nodes:
@@ -124,8 +124,8 @@ class ScalingDecision:
         )
         
         if sustained_low_util:
-            if self.last_scale_action == "scale_down" and time_since_last_scale < SCALE_DOWN_COOLDOWN:
-                logger.info(f"Scale-down possible but in scale-down cooldown ({time_since_last_scale}s < {SCALE_DOWN_COOLDOWN}s)")
+            if time_since_last_scale < SCALE_DOWN_COOLDOWN:
+                logger.info(f"Scale-down possible but in cooldown after {self.last_scale_action} ({time_since_last_scale}s < {SCALE_DOWN_COOLDOWN}s)")
                 return {"action": "none", "nodes": 0, "reason": "In scale-down cooldown"}
             
             if self.current_nodes <= self.min_nodes:

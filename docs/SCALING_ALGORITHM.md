@@ -8,7 +8,7 @@
 
 node-fleet uses a **hybrid three-layer decision engine** that runs every 2 minutes.
 
-![Scaling Decision Algorithm](diagrams/scaling-logic-flowchart.png)
+![Scaling Decision Algorithm](diagrams/screenshots/FR-2-Scaling-Logic.png)
 
 | Layer | Type | Trigger |
 |-------|------|---------|
@@ -52,7 +52,7 @@ This asymmetry is intentional: it's safer to add a node too early than to remove
 
 Lambda queries Prometheus via HTTP on every invocation (Step 3).
 
-![Data Flow — Metrics to Decision](diagrams/data-flow.png)
+![Metric Collection Flow](diagrams/screenshots/FR-1-Metric-Collection.png)
 
 ```python
 class MetricsCollector:
@@ -351,6 +351,6 @@ Lambda calls `events:put_rule` to update the schedule after each stable invocati
 | Drain timeout (300s) | SSM command timeout | Hung drain — aborts rather than force-terminates |
 | Critical pod protection | SSM check before drain | StatefulSet data loss + CoreDNS outage |
 | Cooldown periods | 300s/600s per action | Thrashing (scale-up → scale-down → scale-up) |
-| Node join validation | Poll Ready state (5 min max) | Terminating failed nodes that never joined |
+| Node join validation | EC2 running + elapsed >= 120s guard; abandon after 10 min (600s) | Premature confirmation before K8s join completes |
 | Async drain (SSM) | Initiated N, completed N+1 | Lambda timeout during long drain operations |
 | Finally block | Lock release unconditional | Exception leaving lock permanently held |

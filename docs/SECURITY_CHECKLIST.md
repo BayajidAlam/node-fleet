@@ -32,7 +32,7 @@ Before deploying to production, verify each item:
 
 ### Network Security
 
-![Network Topology](diagrams/network-topology.png)
+![Security — IAM Roles & Secrets Manager](diagrams/screenshots/NFR-4-Security.png)
 
 - [x] Workers in private subnets (no public IPs)
 - [x] Prometheus accessible only from Lambda SG (not open to internet)

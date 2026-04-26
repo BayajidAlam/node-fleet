@@ -4,7 +4,7 @@ metadata:
   name: load-generator
   namespace: default
 spec:
-  replicas: 10
+  replicas: 8
   selector:
     matchLabels:
       app: load-generator
@@ -13,15 +13,14 @@ spec:
       labels:
         app: load-generator
     spec:
+      tolerations:
+      - operator: Exists
       containers:
-        - name: stress
-          image: polinux/stress:1.0.4
-          command: ["stress"]
-          args: ["--cpu", "1", "--timeout", "600s"]
-          resources:
-            requests:
-              cpu: "1000m"
-              memory: "100Mi"
-            limits:
-              cpu: "1000m"
-              memory: "200Mi"
+      - name: stress
+        image: polinux/stress:1.0.4
+        command: ["stress"]
+        args: ["--cpu", "4", "--vm", "1", "--vm-bytes", "200M", "--timeout", "600s"]
+        resources:
+          requests:
+            cpu: "800m"
+            memory: "200Mi"

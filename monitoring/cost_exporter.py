@@ -280,7 +280,7 @@ class EnhancedCostExporter:
             return len(pods.items)
         except Exception as e:
             instances = self.get_running_instances()
-            estimated = len(instances) * 10
+            estimated = len(instances) * 5  # ~5 pods/node avg (actual cluster: 13 pods / 3 nodes)
             print(f"Warning: K8s pod count failed ({e}), estimating {estimated}")
             return estimated
     

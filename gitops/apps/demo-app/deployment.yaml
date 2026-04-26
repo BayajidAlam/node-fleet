@@ -76,6 +76,15 @@ data:
             return jsonify({'error': 'Processing failed'}), 500
         return jsonify({'status': 'completed', 'computation_time': duration})
 
+    @app.route('/api/cpu-burn')
+    def cpu_burn():
+        duration = min(float(request.args.get('duration', 0.3)), 5.0)
+        end = time.time() + duration
+        result = 0
+        while time.time() < end:
+            result += sum(i * i for i in range(10_000))
+        return jsonify({'burned_s': duration, 'checksum': result % 999983})
+
     @app.route('/api/queue/add', methods=['POST'])
     def add_to_queue():
         global simulated_queue
@@ -126,6 +135,13 @@ spec:
         prometheus.io/port: "5000"
         prometheus.io/path: "/metrics"
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
         - name: demo-app
           image: python:3.11-slim

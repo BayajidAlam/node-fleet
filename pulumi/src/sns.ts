@@ -14,27 +14,46 @@ export const slackTopic = new aws.sns.Topic("node-fleet-notifications", {
 const slackNotifierCode = `import json
 import urllib.request
 import boto3
-import os
+
+def format_cloudwatch_alarm(alarm):
+    state   = alarm.get('NewStateValue', '?')
+    name    = alarm.get('AlarmName', '?')
+    desc    = alarm.get('AlarmDescription', '')
+    reason  = alarm.get('NewStateReason', '')
+    region  = alarm.get('Region', '')
+    time    = alarm.get('StateChangeTime', '')
+
+    icon = {'ALARM': ':red_circle:', 'OK': ':large_green_circle:', 'INSUFFICIENT_DATA': ':white_circle:'}.get(state, ':white_circle:')
+    return f"{icon} *CloudWatch {state}* — {name}\\n_{desc}_\\n*Reason:* {reason}\\n*Region:* {region} | {time}"
 
 def handler(event, context):
-    # Get webhook URL from Secrets Manager
-    secrets = boto3.client('secretsmanager')
-    webhook_url = secrets.get_secret_value(SecretId='node-fleet/slack-webhook')['SecretString']
-    
-    # Extract SNS message
-    message = event['Records'][0]['Sns']['Message']
-    
-    # Send to Slack
-    payload = {'text': message}
-    req = urllib.request.Request(webhook_url, json.dumps(payload).encode('utf-8'))
-    req.add_header('Content-Type', 'application/json')
-    
+    secrets     = boto3.client('secretsmanager')
+    webhook_url = secrets.get_secret_value(SecretId='node-fleet/slack-webhook')['SecretString'].strip()
+
+    record  = event['Records'][0]['Sns']
+    raw_msg = record['Message']
+    subject = record.get('Subject', '')
+
+    # Format CloudWatch alarm JSON into readable text; pass autoscaler messages through as-is
     try:
-        urllib.request.urlopen(req)
+        parsed = json.loads(raw_msg)
+        if 'AlarmName' in parsed:
+            text = format_cloudwatch_alarm(parsed)
+        else:
+            text = raw_msg
+    except (json.JSONDecodeError, TypeError):
+        text = raw_msg
+
+    payload = json.dumps({'text': text}).encode('utf-8')
+    req     = urllib.request.Request(webhook_url, payload)
+    req.add_header('Content-Type', 'application/json')
+
+    try:
+        urllib.request.urlopen(req, timeout=10)
         return {'statusCode': 200}
     except Exception as e:
-        print(f"Error sending to Slack: {e}")
-        return {'statusCode': 500, 'body': str(e)}
+        print(f"Slack delivery failed: {e}")
+        raise  # let Lambda retry via SNS DLQ
 `;
 
 export const slackNotifierLambda = new aws.lambda.Function("slack-notifier", {

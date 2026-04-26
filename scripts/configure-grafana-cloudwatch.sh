@@ -67,7 +67,25 @@ DATASOURCE_UID=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
 
 echo "   CloudWatch UID: $DATASOURCE_UID"
 
-# Step 2: Update and import dashboards
+# Step 2: Create/get Node-Fleet folder and import dashboards
+echo ""
+echo "→ Setting up Node-Fleet folder..."
+
+FOLDER_RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+    -d '{"title": "Node-Fleet"}' \
+    "${GRAFANA_URL}/api/folders" 2>&1)
+
+FOLDER_UID=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+    "${GRAFANA_URL}/api/folders" | jq -r '.[] | select(.title=="Node-Fleet") | .uid')
+
+if [ -z "$FOLDER_UID" ]; then
+    echo "⚠️  Could not get Node-Fleet folder UID, dashboards will go to General"
+else
+    echo "✅ Node-Fleet folder UID: $FOLDER_UID"
+fi
+
 echo ""
 echo "→ Importing dashboards..."
 
@@ -82,14 +100,13 @@ for dashboard_file in ${DASHBOARD_DIR}/*.json; do
     if [ ! -f "$dashboard_file" ]; then
         continue
     fi
-    
+
     TITLE=$(jq -r '.title // "Unknown"' "$dashboard_file")
     echo "   • Importing: $TITLE"
-    
-    # Fix namespace and add datasource UID
+
+    # Fix namespace, add datasource UID, reset id for clean import
     FIXED_DASHBOARD=$(jq --arg uid "$DATASOURCE_UID" '
         .id = null |
-        .uid = null |
         walk(
             if type == "object" and has("namespace") then
                 .namespace = (
@@ -103,10 +120,11 @@ for dashboard_file in ${DASHBOARD_DIR}/*.json; do
             end
         )
     ' "$dashboard_file")
-    
-    # Wrap for import API
-    IMPORT_PAYLOAD=$(jq -n --argjson dashboard "$FIXED_DASHBOARD" '{
+
+    # Wrap for import API — include folderUid to place in Node-Fleet folder
+    IMPORT_PAYLOAD=$(jq -n --argjson dashboard "$FIXED_DASHBOARD" --arg folderUid "$FOLDER_UID" '{
         dashboard: $dashboard,
+        folderUid: $folderUid,
         overwrite: true,
         message: "Auto-imported with CloudWatch datasource"
     }')

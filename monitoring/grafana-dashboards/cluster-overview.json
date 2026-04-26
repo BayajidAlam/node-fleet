@@ -1,9 +1,13 @@
 {
   "title": "Cluster Overview",
   "uid": "cluster-overview",
-  "tags": ["kubernetes", "cluster", "node-fleet"],
+  "tags": [
+    "kubernetes",
+    "cluster",
+    "node-fleet"
+  ],
   "timezone": "browser",
-  "schemaVersion": 16,
+  "schemaVersion": 36,
   "version": 0,
   "refresh": "30s",
   "panels": [
@@ -56,7 +60,7 @@
     {
       "id": 2,
       "title": "CPU Utilization (24h)",
-      "type": "graph",
+      "type": "timeseries",
       "datasource": "Prometheus",
       "gridPos": {
         "x": 6,
@@ -71,25 +75,18 @@
           "refId": "A"
         }
       ],
-      "yaxes": [
-        {
-          "format": "percent",
-          "label": "CPU %",
-          "max": 100,
-          "min": 0
-        },
-        {
-          "format": "short"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
         }
-      ],
-      "xaxis": {
-        "mode": "time"
       }
     },
     {
       "id": 3,
       "title": "Memory Utilization (24h)",
-      "type": "graph",
+      "type": "timeseries",
       "datasource": "Prometheus",
       "gridPos": {
         "x": 15,
@@ -104,25 +101,18 @@
           "refId": "A"
         }
       ],
-      "yaxes": [
-        {
-          "format": "percent",
-          "label": "Memory %",
-          "max": 100,
-          "min": 0
-        },
-        {
-          "format": "short"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
         }
-      ],
-      "xaxis": {
-        "mode": "time"
       }
     },
     {
       "id": 4,
       "title": "Network I/O",
-      "type": "graph",
+      "type": "timeseries",
       "datasource": "Prometheus",
       "gridPos": {
         "x": 0,
@@ -142,23 +132,16 @@
           "refId": "B"
         }
       ],
-      "yaxes": [
-        {
-          "format": "MBs",
-          "label": "MB/s"
-        },
-        {
-          "format": "short"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs"
         }
-      ],
-      "xaxis": {
-        "mode": "time"
       }
     },
     {
       "id": 5,
       "title": "Disk I/O",
-      "type": "graph",
+      "type": "timeseries",
       "datasource": "Prometheus",
       "gridPos": {
         "x": 12,
@@ -178,17 +161,10 @@
           "refId": "B"
         }
       ],
-      "yaxes": [
-        {
-          "format": "MBs",
-          "label": "MB/s"
-        },
-        {
-          "format": "short"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs"
         }
-      ],
-      "xaxis": {
-        "mode": "time"
       }
     },
     {
@@ -215,7 +191,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         }
       },
@@ -245,7 +223,7 @@
     {
       "id": 7,
       "title": "Scaling Events Timeline",
-      "type": "graph",
+      "type": "timeseries",
       "datasource": "Prometheus",
       "gridPos": {
         "x": 6,
@@ -265,20 +243,11 @@
           "refId": "B"
         }
       ],
-      "yaxes": [
-        {
-          "format": "short",
-          "label": "Events"
-        },
-        {
-          "format": "short"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
         }
-      ],
-      "xaxis": {
-        "mode": "time"
-      },
-      "bars": true,
-      "lines": false
+      }
     },
     {
       "id": 8,

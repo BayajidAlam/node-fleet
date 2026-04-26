@@ -20,10 +20,11 @@ RULE_NAME = os.environ.get('RULE_NAME')
 STATE_TABLE = os.environ.get('STATE_TABLE')
 CLUSTER_ID = os.environ.get('CLUSTER_ID', 'node-fleet-cluster')
 
-# Scheduling thresholds: high=1min (aggressive), normal=2min, low=5min (cost-saving)
+# Scheduling thresholds: high=1min (aggressive), normal/low=2min (per NFR1 <3min detection)
+# Requirement: EventBridge every 2 minutes. Only speed up during high activity, never slow down below 2.
 HIGH_ACTIVITY_INTERVAL = 1
 NORMAL_INTERVAL = 2
-LOW_ACTIVITY_INTERVAL = 5
+LOW_ACTIVITY_INTERVAL = 2
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -74,43 +75,49 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 def assess_cluster_activity() -> str:
     """
-    Assess cluster activity level based on recent metrics
-    
+    Assess cluster activity level based on recent metrics.
+
     Returns:
         "high", "normal", or "low"
     """
     try:
-        # Check scaling events in last 30 minutes
-        response = cloudwatch.get_metric_statistics(
-            Namespace='NodeFleet/Autoscaler',
-            MetricName='ScalingEvents',
-            Dimensions=[{'Name': 'ClusterID', 'Value': CLUSTER_ID}],
-            StartTime=get_time_minutes_ago(30),
-            EndTime=get_current_time(),
-            Period=1800,  # 30 minutes
-            Statistics=['Sum']
-        )
-        
+        now = get_current_time()
+        start = get_time_minutes_ago(30)
+
+        # Sum scale-up + scale-down events in last 30 minutes.
+        # Published without dimensions by autoscaler.py.
         scaling_events = 0
-        if response['Datapoints']:
-            scaling_events = int(response['Datapoints'][0]['Sum'])
-        
-        # Check CPU volatility (standard deviation)
+        for metric_name in ('ScaleUpEvents', 'ScaleDownEvents'):
+            resp = cloudwatch.get_metric_statistics(
+                Namespace='NodeFleet/Autoscaler',
+                MetricName=metric_name,
+                Dimensions=[],
+                StartTime=start,
+                EndTime=now,
+                Period=1800,
+                Statistics=['Sum'],
+            )
+            if resp['Datapoints']:
+                scaling_events += int(resp['Datapoints'][0]['Sum'])
+
+        # CPU volatility — published as 'ClusterCPUUtilization', no dimensions.
         cpu_response = cloudwatch.get_metric_statistics(
             Namespace='NodeFleet/Autoscaler',
-            MetricName='ClusterCPU',
-            Dimensions=[{'Name': 'ClusterID', 'Value': CLUSTER_ID}],
-            StartTime=get_time_minutes_ago(30),
-            EndTime=get_current_time(),
-            Period=300,  # 5 minute intervals
-            Statistics=['Average']
+            MetricName='ClusterCPUUtilization',
+            Dimensions=[],
+            StartTime=start,
+            EndTime=now,
+            Period=300,
+            Statistics=['Average'],
         )
-        
-        cpu_volatility = 0
+
+        cpu_volatility = 0.0
         if len(cpu_response['Datapoints']) >= 2:
             values = [dp['Average'] for dp in cpu_response['Datapoints']]
             cpu_volatility = calculate_std_dev(values)
-        
+
+        logger.info(f"Activity assessment: scaling_events={scaling_events}, cpu_volatility={cpu_volatility:.1f}")
+
         # Classify activity level
         if scaling_events >= 3 or cpu_volatility > 20:
             return "high"
@@ -118,7 +125,7 @@ def assess_cluster_activity() -> str:
             return "low"
         else:
             return "normal"
-            
+
     except Exception as e:
         logger.error(f"Error assessing activity: {e}")
         return "normal"  # Default to normal on error

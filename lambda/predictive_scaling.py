@@ -208,22 +208,28 @@ class PredictiveScaler:
                     prediction['predicted_pending_pods'] = int(pattern['avg_pending'])
                     prediction['confidence'] = min(pattern['sample_count'] / 10.0, 1.0)
             
-            # Apply weekly trend modifier
+            # Apply weekly trend modifier using separate multipliers per metric
             if current_day in weekly_patterns and historical:
                 weekly = weekly_patterns[current_day]
                 cpu_vals = [m['cpu_percent'] for m in historical if 'cpu_percent' in m]
+                mem_vals = [m['memory_percent'] for m in historical if 'memory_percent' in m]
                 if cpu_vals:
                     overall_avg_cpu = statistics.mean(cpu_vals)
-                    # Scale prediction by weekly trend
                     if overall_avg_cpu > 0:
-                        weekly_multiplier = weekly['avg_cpu'] / overall_avg_cpu
-                        prediction['predicted_cpu'] *= weekly_multiplier
-                        prediction['predicted_memory'] *= weekly_multiplier
-            
+                        prediction['predicted_cpu'] *= weekly['avg_cpu'] / overall_avg_cpu
+                if mem_vals:
+                    overall_avg_memory = statistics.mean(mem_vals)
+                    if overall_avg_memory > 0:
+                        prediction['predicted_memory'] *= weekly['avg_memory'] / overall_avg_memory
+
             # Add safety margin for uncertainty
             if prediction['confidence'] < 0.5:
                 prediction['predicted_cpu'] *= 1.2
                 prediction['predicted_memory'] *= 1.2
+
+            # Clamp to valid percentage range
+            prediction['predicted_cpu'] = min(100.0, max(0.0, prediction['predicted_cpu']))
+            prediction['predicted_memory'] = min(100.0, max(0.0, prediction['predicted_memory']))
             
             logger.info(f"Prediction for hour {next_hour}: CPU={prediction['predicted_cpu']:.1f}%, "
                        f"Memory={prediction['predicted_memory']:.1f}%, "

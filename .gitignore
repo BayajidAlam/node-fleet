@@ -12,6 +12,7 @@ dist/
 # Pulumi
 .pulumi/
 Pulumi.*.yaml
+pulumi/stack-export.json
 
 # IDE
 .vscode/

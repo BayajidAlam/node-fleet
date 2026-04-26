@@ -40,7 +40,7 @@ You do **not** handle:
 ## Always Read First
 
 1. **[.agents/CONTEXT.md](.agents/CONTEXT.md)** — MANDATORY. Complete architecture, thresholds, secrets.
-2. **`SDB1_Problem_Statement.md`** — Original problem statement (partial requirements).
+2. **`Problem_Statement.md`** — Original problem statement (partial requirements).
 3. **`docs/`** — Existing documentation to stay consistent with.
 
 ---

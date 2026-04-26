@@ -94,7 +94,7 @@
 
 ## Cost Comparison Table
 
-![Cost Comparison](diagrams/cost-comparison-chart.png)
+![Cost & Lambda Execution](diagrams/screenshots/NFR-3-Cost.png)
 
 | Component | Before | After | Delta |
 |-----------|--------|-------|-------|
@@ -198,7 +198,7 @@ ROI = (720,000 - 100,000) / 100,000 = **620%** (Executive Summary rounds to matc
 
 Access: `http://<master-ip>:30300/d/cost-tracking`
 
-![Cost Dashboard](dashboards/dashboard-cost-tracking.png)
+![Spot Instances Cost Breakdown](diagrams/screenshots/BONUS-2-Spot-Instances.png)
 
 Panels:
 - **Hourly cost** (real-time from Prometheus `aws_ec2_instance_cost_per_hour`)

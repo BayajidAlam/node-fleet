@@ -52,7 +52,7 @@ EventBridge triggers a Python Lambda every 2 minutes. Lambda queries Prometheus 
 | **EC2 + K3s** | Worker fleet (2–10 nodes, t3.small, 70% Spot) |
 | **Secrets Manager** | K3s token, Prometheus credentials, Slack webhook |
 | **SNS + Slack** | Rich scaling event notifications |
-| **CloudWatch** | 10 custom metrics, 8 alarms, 30-day Lambda logs |
+| **CloudWatch** | 9 custom metrics, 8 alarms, 30-day Lambda logs |
 | **Grafana** | 4 dashboards — cluster, autoscaler, app metrics, cost |
 | **FluxCD** | GitOps — K8s manifests auto-synced from repo |
 
@@ -212,7 +212,7 @@ Step 5: Execute Action
 
 Step 6: Update State
   → DynamoDB: node_count, last_scale_time, last_scale_action
-  → CloudWatch: publish 10 custom metrics
+  → CloudWatch: publish 9 custom metrics
   → SNS → Slack: rich notification with reason + node count + cost impact
 
 Step 7: Release Lock (in finally block — always executes)

@@ -46,27 +46,29 @@ class CustomMetricsCollector:
             return None
 
     def get_queue_depth(self, queue_name: str = "default") -> Optional[int]:
-        """Get current queue depth"""
-        val = self._query(f'app_queue_depth{{queue="{queue_name}"}}')
+        """Get current queue depth — sum across all pods"""
+        val = self._query(f'sum(app_queue_depth{{queue="{queue_name}"}})')
         return int(val) if val is not None else None
     
     def get_api_latency_p95(self, service: str = "api") -> Optional[float]:
         """Get 95th percentile API latency in ms"""
-        query = f'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{{service="{service}"}}[5m])) * 1000'
-        return self._query(query)
+        query = f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{service="{service}"}}[5m]))) * 1000'
+        val = self._query(query)
+        import math
+        return None if val is None or math.isnan(val) else val
     
     def get_request_rate(self, service: str = "api", window: str = "5m") -> Optional[float]:
         """Get requests per second"""
-        return self._query(f'rate(http_requests_total{{service="{service}"}}[{window}])')
+        return self._query(f'sum(rate(http_requests_total{{service="{service}"}}[{window}]))')
     
     def get_error_rate(self, service: str = "api", window: str = "5m") -> Optional[float]:
         """Get error rate percentage"""
-        query = f'(rate(http_requests_total{{service="{service}", status=~"5.."}}[{window}]) / rate(http_requests_total{{service="{service}"}}[{window}])) * 100'
+        query = f'(sum(rate(http_requests_total{{service="{service}", status=~"5.."}}[{window}])) / sum(rate(http_requests_total{{service="{service}"}}[{window}]))) * 100'
         return self._query(query) or 0.0
     
     def get_active_connections(self, service: str = "api") -> Optional[int]:
-        """Get current active connections"""
-        val = self._query(f'app_active_connections{{service="{service}"}}')
+        """Get current active connections — sum across all pods"""
+        val = self._query(f'sum(app_active_connections{{service="{service}"}})')
         return int(val) if val is not None else None
     
     def evaluate_scaling_need(self, thresholds: Dict[str, Any]) -> Dict[str, Any]:

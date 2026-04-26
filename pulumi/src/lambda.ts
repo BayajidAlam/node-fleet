@@ -33,7 +33,7 @@ export const autoscalerLambda = new aws.lambda.Function("autoscaler-lambda", {
   s3Bucket: lambdaArtifactsBucket.id,
   s3Key: lambdaPackage.key,
   s3ObjectVersion: lambdaPackage.versionId,
-  timeout: 60, // 60 seconds (per spec)
+  timeout: 30, // 30 seconds max per NFR-3 requirement
   memorySize: 256, // 256 MB (per spec)
 
   deadLetterConfig: {

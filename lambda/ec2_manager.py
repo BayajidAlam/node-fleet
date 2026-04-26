@@ -22,6 +22,9 @@ logger = logging.getLogger()
 DRAIN_TIMEOUT_SECONDS = 300
 # How long to wait for a node to appear as Ready after launch (10 minutes)
 NODE_READY_TIMEOUT_SECONDS = 600
+# Minimum elapsed time before treating an EC2-running instance as K8s-Ready.
+# Userdata installs k3s-agent and joins the cluster — takes ~90-120s after boot.
+MIN_NODE_JOIN_WAIT_SECONDS = 120
 
 
 def _get_boto3():
@@ -245,13 +248,13 @@ class EC2Manager:
     # Public: Check Pending Scale-Ups                                      #
     # ------------------------------------------------------------------ #
 
-    def check_pending_scale_ups(self, state_manager) -> List[str]:
+    def check_pending_scale_ups(self, state_manager) -> List[Dict]:
         """
         Verify that pending scale-up instances have joined the K3s cluster
         and reached Ready state. Clears confirmed instances from DynamoDB.
 
         Returns:
-            List of instance IDs confirmed as Ready
+            List of dicts: [{instance_id, elapsed_s, join_latency_ms}]
         """
         pending = state_manager.get_pending_scale_ups()
         if not pending:
@@ -277,10 +280,16 @@ class EC2Manager:
                 instance = reservations[0]["Instances"][0]
                 state = instance["State"]["Name"]
 
-                if state == "running":
-                    confirmed.append(instance_id)
+                if state == "running" and elapsed >= MIN_NODE_JOIN_WAIT_SECONDS:
+                    confirmed.append({
+                        "instance_id": instance_id,
+                        "elapsed_s": elapsed,
+                        "join_latency_ms": elapsed * 1000,
+                    })
                     state_manager.clear_pending_scale_up(instance_id)
-                    logger.info(f"Instance {instance_id} confirmed running ({elapsed}s after launch)")
+                    logger.info(f"Instance {instance_id} confirmed Ready ({elapsed}s after launch)")
+                elif state == "running":
+                    logger.info(f"Instance {instance_id} running but waiting for K8s join ({elapsed}s < {MIN_NODE_JOIN_WAIT_SECONDS}s)")
                 elif state in ("terminated", "shutting-down"):
                     logger.warning(f"Instance {instance_id} unexpectedly in state {state}")
                     state_manager.clear_pending_scale_up(instance_id)
@@ -398,7 +407,10 @@ class EC2Manager:
         """
         try:
             response = self.ec2.describe_subnets(
-                Filters=[{"Name": "tag:Project", "Values": ["node-fleet"]}]
+                Filters=[
+                    {"Name": "tag:Project", "Values": ["node-fleet"]},
+                    {"Name": "tag:Type", "Values": ["private"]},
+                ]
             )
             subnets = [s["SubnetId"] for s in response.get("Subnets", [])]
         except Exception as e:

@@ -173,10 +173,8 @@ export const dynamodbEndpoint = new aws.ec2.VpcEndpoint("dynamodb-endpoint", {
 });
 
 // Export subnet AZs for Multi-AZ logic
-export const workerSubnets = [publicSubnet1.id, publicSubnet2.id];
+export const workerSubnets = [privateSubnet1.id, privateSubnet2.id];
 export const workerAZs = [
-  publicSubnet1.availabilityZone,
-  publicSubnet2.availabilityZone,
   privateSubnet1.availabilityZone,
   privateSubnet2.availabilityZone,
 ];

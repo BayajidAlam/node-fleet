@@ -116,9 +116,9 @@ export const lambdaTimeoutAlarm = new aws.cloudwatch.MetricAlarm(
     namespace: "AWS/Lambda",
     period: 60,
     statistic: "Maximum",
-    threshold: 50000, // 50 seconds in milliseconds
+    threshold: 25000, // 25 seconds in milliseconds — approaching 30s limit
     alarmDescription:
-      "Warning: Lambda execution time approaching 60s timeout limit",
+      "Warning: Lambda execution time approaching 30s timeout limit",
     alarmActions: [slackTopic.arn],
     treatMissingData: "notBreaching",
     dimensions: {

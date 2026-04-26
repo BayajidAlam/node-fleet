@@ -21,6 +21,12 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: cost-exporter
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
       containers:
         - name: cost-exporter
           image: python:3.11-slim

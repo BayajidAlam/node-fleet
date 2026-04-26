@@ -150,16 +150,33 @@ def heavy_computation():
     # Simulate CPU-intensive work
     duration = random.uniform(0.2, 0.5)
     time.sleep(duration)
-    
+
     # Randomly introduce errors (5% rate)
     if random.random() < 0.05:
         return jsonify({'error': 'Processing failed'}), 500
-    
+
     return jsonify({
         'status': 'completed',
         'computation_time': duration,
         'result': random.randint(1000, 9999)
     })
+
+
+@app.route('/api/cpu-burn')
+def cpu_burn():
+    """
+    Real CPU computation for autoscaler load testing (Layer 1 reactive scaling).
+    Burns CPU for `duration` seconds via tight arithmetic loop — no sleep.
+    """
+    duration = float(request.args.get('duration', 0.3))
+    duration = min(duration, 5.0)  # cap at 5s per request
+
+    end = time.time() + duration
+    result = 0
+    while time.time() < end:
+        result += sum(i * i for i in range(10_000))
+
+    return jsonify({'burned_s': duration, 'checksum': result % 999983})
 
 
 @app.route('/api/queue/add', methods=['POST'])

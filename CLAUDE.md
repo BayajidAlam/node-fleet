@@ -39,7 +39,7 @@ cd lambda
 pip install -r requirements.txt -t .
 zip -r function.zip . --exclude "*.pyc" "venv/*" "tests/*"
 aws lambda update-function-code \
-  --function-name node-fleet-cluster-autoscaler \
+  --function-name node-fleet-prod-autoscaler \
   --zip-file fileb://function.zip
 ```
 
@@ -230,7 +230,7 @@ Prometheus: NodePort 30090, basic auth, scrape 15s, retention 7d.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/SCALING_ALGORITHM.md](docs/SCALING_ALGORITHM.md)
 - [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
-- [docs/TESTING.md](docs/TESTING.md)
+- [docs/TESTING_RESULTS.md](docs/TESTING_RESULTS.md)
 - [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md)
 - [docs/COST_ANALYSIS.md](docs/COST_ANALYSIS.md)
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)

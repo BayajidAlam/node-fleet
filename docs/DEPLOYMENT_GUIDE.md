@@ -67,7 +67,7 @@ aws configure list             # verify region = ap-southeast-1
 
 ## Full Deployment (From Zero)
 
-![System Architecture](diagrams/system-architecture.png)
+![System Overview](diagrams/screenshots/00-System-Overview.png)
 
 ### Step 1 — Clone and Configure
 

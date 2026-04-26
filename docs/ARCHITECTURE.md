@@ -2,7 +2,9 @@
 
 > **Cluster topology**: 1 fixed master (t3.medium) + 2–10 autoscaled workers (t3.small). All node counts in this doc refer to **workers** unless stated.
 
-Diagrams: [System Architecture](diagrams/system-architecture.png) · [Network Topology](diagrams/network-topology.png) · [Data Flow](diagrams/data-flow.png) · [Scaling Logic](diagrams/scaling-logic-flowchart.png)
+**Diagrams:** [System Overview](diagrams/screenshots/00-System-Overview.png) · [Lambda 7-Step Flow](diagrams/screenshots/00-Lambda-7-Step-Flow.png) · [Scaling Logic](diagrams/screenshots/FR-2-Scaling-Logic.png) · [Multi-AZ](diagrams/screenshots/BONUS-1-Multi-AZ-Distribution.png)
+
+**Requirements Coverage:** [`REQUIREMENTS_COVERAGE.md`](REQUIREMENTS_COVERAGE.md) — every FR/NFR/Bonus verified against implementation.
 
 ---
 
@@ -43,7 +45,7 @@ node-fleet solves a real cost problem: a static worker fleet (baseline assumptio
 
 ### AWS Infrastructure
 
-![System Architecture](diagrams/system-architecture.png)
+![System Overview](diagrams/screenshots/00-System-Overview.png)
 
 ### Component Roles
 
@@ -57,7 +59,7 @@ node-fleet solves a real cost problem: a static worker fleet (baseline assumptio
 | **EC2 Launch Template** | Reproducible worker config (t3.small, 20GB gp3, Spot) | ← Lambda RunInstances |
 | **K3s** | Container orchestration | Workers auto-join via token from Secrets Manager |
 | **SSM** | Remote kubectl commands for drain | ← Lambda (async), → master node |
-| **CloudWatch** | 10 custom metrics + 8 alarms + 30d logs | ← Lambda |
+| **CloudWatch** | 9 custom metrics + 8 alarms + 30d logs | ← Lambda |
 | **SNS** | Alert routing | ← Lambda, → Slack webhook Lambda |
 | **Grafana** | 4 dashboards | ← Prometheus, ← CloudWatch |
 | **FluxCD** | GitOps — auto-apply K8s manifests | ← Git repo (main branch) |
@@ -83,19 +85,23 @@ Every EventBridge invocation runs these steps in order. Lock released in `finall
 
 ## 3. Network Topology
 
-![Network Topology](diagrams/network-topology.png)
+![Network Topology — VPC, Subnets, Security Groups](diagrams/network-topology.png)
+
+![Multi-AZ Worker Distribution](diagrams/screenshots/BONUS-1-Multi-AZ-Distribution.png)
 
 ### VPC Design
 
 **CIDR**: `10.0.0.0/16` (65,536 IPs)  
 **Region**: `ap-southeast-1` (Singapore)
 
-| Subnet | CIDR | AZ | Purpose | Route Table |
-|--------|------|----|---------|-------------|
-| Public-1a | 10.0.1.0/24 | ap-southeast-1a | NAT Gateway | 0.0.0.0/0 → IGW |
-| Public-1b | 10.0.2.0/24 | ap-southeast-1b | NAT Gateway | 0.0.0.0/0 → IGW |
-| Private-1a | 10.0.11.0/24 | ap-southeast-1a | K3s Master + workers | 0.0.0.0/0 → NAT-1a |
-| Private-1b | 10.0.12.0/24 | ap-southeast-1b | Workers (Multi-AZ) | 0.0.0.0/0 → NAT-1b |
+| Subnet | CIDR | AZ | Hosts | Route Table |
+|--------|------|----|-------|-------------|
+| Public-1a | 10.0.1.0/24 | ap-southeast-1a | **K3s Master** (10.0.1.176) + NAT Gateway | 0.0.0.0/0 → IGW |
+| Public-1b | 10.0.2.0/24 | ap-southeast-1b | (reserved for future AZ expansion) | 0.0.0.0/0 → IGW |
+| Private-1a | 10.0.11.0/24 | ap-southeast-1a | Worker-1 (10.0.11.104) | 0.0.0.0/0 → NAT (public-1a) |
+| Private-1b | 10.0.12.0/24 | ap-southeast-1b | Worker-2 (10.0.12.24) | 0.0.0.0/0 → NAT (public-1a) |
+
+> **Single NAT Gateway**: Both private subnets route through the NAT in public-1a. This is a cost trade-off (~$32/month per NAT). If AZ-1a fails, workers in private-1b lose outbound internet until the NAT recovers. For full HA, add a second NAT in public-1b and a separate private route table for private-1b.
 
 **Why private subnets for workers?** Workers have no public IPs. All outbound internet traffic (ECR pulls, Secrets Manager, package downloads) goes through NAT Gateways. This reduces attack surface and prevents direct internet access to K3s API.
 
@@ -105,33 +111,38 @@ Every EventBridge invocation runs these steps in order. Lock released in `finall
 
 | Direction | Protocol | Port | Source | Purpose |
 |-----------|----------|------|--------|---------|
-| Inbound | TCP | 6443 | sg-worker | K3s API server |
-| Inbound | TCP | 30090 | sg-lambda | Prometheus NodePort |
+| Inbound | TCP | 6443 | 10.0.0.0/16 | K3s API server (workers + Lambda in VPC) |
+| Inbound | TCP | 30090 | 10.0.0.0/16 | Prometheus NodePort (Lambda queries via VPC) |
 | Inbound | TCP | 30300 | 0.0.0.0/0 | Grafana UI |
-| Inbound | TCP | 22 | 0.0.0.0/0 | SSH admin |
-| Outbound | ALL | ALL | 0.0.0.0/0 | Internet via NAT |
+| Inbound | TCP | 30080 | 0.0.0.0/0 | Demo App NodePort |
+| Inbound | TCP | 22 | 10.0.0.0/16 | SSH (VPC only — use bastion or VPN) |
+| Inbound | UDP | 8472 | 10.0.0.0/16 | Flannel VXLAN (pod-to-pod across nodes) |
+| Inbound | TCP | 10250 | 10.0.0.0/16 | Kubelet |
+| Inbound | TCP | 9100 | 10.0.0.0/16 | Node Exporter |
+| Outbound | ALL | ALL | 0.0.0.0/0 | Internet |
 
 **sg-worker**
 
 | Direction | Protocol | Port | Source | Purpose |
 |-----------|----------|------|--------|---------|
-| Inbound | ALL | ALL | sg-master | K3s control plane traffic |
-| Inbound | UDP | 8472 | sg-worker | Flannel VXLAN — pod networking between workers |
-| Inbound | TCP | 22 | 0.0.0.0/0 | SSH admin |
+| Inbound | TCP | 22 | 10.0.0.0/16 | SSH (VPC only) |
+| Inbound | UDP | 8472 | 10.0.0.0/16 | Flannel VXLAN (pod-to-pod) |
+| Inbound | TCP | 10250 | 10.0.0.0/16 | Kubelet |
+| Inbound | TCP | 9100 | 10.0.0.0/16 | Node Exporter |
+| Inbound | TCP | 30000-32767 | 10.0.0.0/16 | NodePort services (VPC internal) |
 | Outbound | ALL | ALL | 0.0.0.0/0 | Internet via NAT |
 
 **sg-lambda**
 
 | Direction | Protocol | Port | Destination | Purpose |
 |-----------|----------|------|-------------|---------|
-| Outbound | TCP | 30090 | sg-master | Prometheus PromQL queries |
-| Outbound | TCP | 443 | 0.0.0.0/0 | AWS APIs: EC2, DynamoDB, SSM, Secrets, SNS |
+| Outbound | ALL | ALL | 0.0.0.0/0 | AWS APIs + Prometheus (unrestricted egress) |
 
 ---
 
 ## 4. Data Flow Sequences
 
-![Data Flow](diagrams/data-flow.png)
+![Lambda 7-Step Orchestration Flow](diagrams/screenshots/00-Lambda-7-Step-Flow.png)
 
 ### Scale-Up Flow (Decision to Capacity)
 
@@ -167,11 +178,11 @@ Every EventBridge invocation runs these steps in order. Lock released in `finall
      → Node appears in kubectl get nodes
      ↓
 ⑧ Invocation N+1 (2 minutes later): Step 1 checks pending_scale_ups
-     EC2 describe: instance Running + node Ready → confirmed (elapsed: 88s)
-     If not Ready after 5min → terminate + alert
+     EC2 describe: instance Running AND elapsed >= 120s (userdata + K8s join) → confirmed (~130s)
+     If not confirmed after 10min (600s) → abandon + alert
      ↓
 ⑨ DynamoDB: node_count=4, last_scale_time=now, last_scale_action=scale_up
-   CloudWatch: ScaleUpEvents+1, CurrentNodeCount=4, NodeJoinLatency=88000ms
+   CloudWatch: ScaleUpEvents+1, CurrentNodeCount=4, NodeJoinLatency=130000ms
    SNS → Slack: "🟢 Scale-Up: CPU 74.3%, +1 node, now 4 total"
      ↓
 ⑩ Lock released (finally block)
@@ -179,7 +190,7 @@ Every EventBridge invocation runs these steps in order. Lock released in `finall
 
 ### Scale-Down Flow (Async SSM Pattern)
 
-**Why async?** `kubectl drain` can take up to 300 seconds. Lambda timeout is 60s. Initiating drain via SSM (which returns in <5s) and checking result on the next invocation keeps Lambda well within timeout.
+**Why async?** `kubectl drain` can take up to 300 seconds. Lambda timeout is 30s (NFR-3). Initiating drain via SSM (which returns in <5s) and checking result on the next invocation keeps Lambda well within timeout.
 
 **Invocation N:**
 ```
@@ -302,7 +313,7 @@ scrape_configs:
   # Kubernetes object metrics: pod phases, node info, resource requests
   - job_name: "kube-state-metrics"
     static_configs:
-      - targets: ["kube-state-metrics.kube-system.svc.cluster.local:8080"]
+      - targets: ["kube-state-metrics.monitoring.svc.cluster.local:8080"]
 
   # Application metrics: queue depth, request latency, error rate
   - job_name: "demo-app"
@@ -348,7 +359,40 @@ scrape_configs:
 
 ---
 
-## 7. High Availability Design
+## 7. Pod Placement
+
+Current pod distribution across nodes (enforced via `nodeAffinity` and `nodeSelector`):
+
+| Node | IP | AZ | Pods |
+|------|----|----|------|
+| **Master** `ip-10-0-1-176` | 10.0.1.176 | ap-southeast-1a | coredns, local-path-provisioner, metrics-server, ingress-nginx-controller, prometheus, grafana, cost-exporter, kube-state-metrics, node-exporter |
+| **Worker-1** `ip-10-0-11-104` | 10.0.11.104 | ap-southeast-1a | demo-app (replica-1), node-exporter |
+| **Worker-2** `ip-10-0-12-24` | 10.0.12.24 | ap-southeast-1b | demo-app (replica-2), node-exporter |
+
+**Placement rules enforced in manifests:**
+
+| Component | Rule | Reason |
+|-----------|------|--------|
+| prometheus, grafana, cost-exporter, kube-state-metrics | `nodeSelector: control-plane=true` + toleration | Must survive worker scale-down — fixed master never terminated |
+| demo-app | `nodeAffinity: DoesNotExist(control-plane)` | Workload pods must not consume master resources |
+| node-exporter | DaemonSet — runs on all nodes | Must scrape every node's metrics |
+| ingress-nginx | No constraint (lands on master by default) | Master is fixed; acceptable for ingress |
+
+**K8s network CIDRs (actual):**
+
+| Layer | CIDR | Allocator |
+|-------|------|-----------|
+| VPC | 10.0.0.0/16 | AWS |
+| Pod network | 10.42.0.0/16 | Flannel VXLAN (MTU 8951) |
+| Service CIDR | 10.43.0.0/16 | K3s |
+| Master pods | 10.42.0.0/24 | K3s node CIDR |
+| Worker-1 pods | 10.42.3.0/24 | K3s node CIDR |
+| Worker-2 pods | 10.42.2.0/24 | K3s node CIDR |
+
+---
+
+## 8. High Availability Design
+
 
 | Risk | Mitigation |
 |------|-----------|
@@ -364,7 +408,7 @@ scrape_configs:
 
 ---
 
-## 8. Security Architecture
+## 9. Security Architecture
 
 All implementation details: [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md)
 
@@ -421,26 +465,26 @@ def get_prometheus_credentials():
 
 ---
 
-## 9. Monitoring Dashboards
+## 10. Monitoring Dashboards
 
 Grafana runs on master node at `http://<master-ip>:30300`. Four dashboards cover all observability layers. Both Prometheus and CloudWatch datasources are provisioned automatically.
 
 ### Cluster Overview
 Real-time cluster health — node count, CPU/memory utilization, network I/O, disk I/O, pending pods, scaling events timeline, pod distribution heatmap.
 
-![Cluster Overview Dashboard](dashboards/dashboard-cluster-overview.png)
+![Cluster Observability](diagrams/screenshots/NFR-5-Observability.png)
 
 ### Autoscaler Performance
 Lambda execution metrics (CloudWatch) + cost savings gauge (Prometheus). Shows Lambda duration, invocation count, scaling decisions (scale-up vs scale-down ratio), node join latency, Lambda errors, and live node count.
 
-![Autoscaler Performance Dashboard](dashboards/dashboard-autoscaler-performance.png)
+![Autoscaler Performance](diagrams/screenshots/NFR-1-Performance.png)
 
 ### Application Metrics
 Demo app observability — request rate (QPS), latency percentiles (p50/p95/p99), error rates (4xx/5xx), queue depth. Triggers autoscaler via custom metrics thresholds.
 
-![Application Metrics Dashboard](dashboards/dashboard-application-metrics.png)
+![Application Metrics](diagrams/screenshots/BONUS-4-Custom-App-Metrics.png)
 
 ### Cost Dashboard
 See [COST_ANALYSIS.md](COST_ANALYSIS.md) for full breakdown. Real-time hourly/daily/monthly cost projections, savings vs static fleet, spot vs on-demand breakdown, CloudWatch billing panel.
 
-![Cost Dashboard](dashboards/dashboard-cost-tracking.png)
+![Cost Tracking](diagrams/screenshots/NFR-3-Cost.png)

@@ -7,7 +7,7 @@
     "node-fleet"
   ],
   "timezone": "browser",
-  "schemaVersion": 16,
+  "schemaVersion": 36,
   "version": 0,
   "refresh": "5m",
   "panels": [
@@ -218,8 +218,8 @@
     {
       "id": 8,
       "title": "CloudWatch Billing (All AWS Services)",
-      "type": "graph",
-      "datasource": "CloudWatch",
+      "type": "timeseries",
+      "datasource": {"type": "cloudwatch", "uid": "P034F075C744B399F"},
       "gridPos": {
         "x": 0,
         "y": 20,
@@ -228,27 +228,35 @@
       },
       "targets": [
         {
-          "datasource": "CloudWatch",
+          "datasource": {"type": "cloudwatch", "uid": "P034F075C744B399F"},
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "us-east-1",
           "namespace": "AWS/Billing",
           "metricName": "EstimatedCharges",
           "dimensions": {
-            "Currency": "USD"
+            "Currency": ["USD"]
           },
-          "statistics": [
-            "Maximum"
-          ],
-          "refId": "A"
+          "statistic": "Maximum",
+          "period": "86400",
+          "matchExact": true,
+          "refId": "A",
+          "legendFormat": "Total Estimated Charges"
         }
       ],
-      "yaxes": [
-        {
-          "format": "currencyUSD",
-          "label": "Total AWS Cost"
-        },
-        {
-          "format": "short"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
         }
-      ]
+      },
+      "options": {
+        "tooltip": {"mode": "single"}
+      }
     },
     {
       "id": 9,

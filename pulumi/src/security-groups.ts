@@ -26,13 +26,13 @@ export const masterSg = new aws.ec2.SecurityGroup("master-sg", {
       cidrBlocks: ["10.0.0.0/16"],
       description: "K3s API from VPC",
     },
-    // Prometheus NodePort
+    // Prometheus NodePort — VPC-only; Lambda queries via private IP
     {
       protocol: "tcp",
       fromPort: 30090,
       toPort: 30090,
-      cidrBlocks: ["0.0.0.0/0"],
-      description: "Prometheus",
+      cidrBlocks: ["10.0.0.0/16"],
+      description: "Prometheus from VPC",
     },
     // Grafana NodePort
     {
