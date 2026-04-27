@@ -54,26 +54,42 @@ cd tests/gitops && python -m pytest test_flux_integration.py -v
 ### Component Diagrams (what each test suite covers)
 
 **Scaling Decision — FR-2**
-![Scaling Logic](diagrams/screenshots/FR-2-Scaling-Logic.png)
+<p align="center">
+  <img src="diagrams/screenshots/FR-2-Scaling-Logic.png" alt="Scaling Logic">
+</p>
 
 **Spot Instance Helper — BONUS-2**
-![Spot Instances](diagrams/screenshots/BONUS-2-Spot-Instances.png)
+<p align="center">
+  <img src="diagrams/screenshots/BONUS-2-Spot-Instances.png" alt="Spot Instances">
+</p>
 
 **Predictive Scaling — BONUS-3**
-![Predictive Scaling](diagrams/screenshots/BONUS-3-Predictive-Scaling.png)
+<p align="center">
+  <img src="diagrams/screenshots/BONUS-3-Predictive-Scaling.png" alt="Predictive Scaling">
+</p>
 
 **Custom Metrics — BONUS-4**
-![Custom App Metrics](diagrams/screenshots/BONUS-4-Custom-App-Metrics.png)
+<p align="center">
+  <img src="diagrams/screenshots/BONUS-4-Custom-App-Metrics.png" alt="Custom App Metrics">
+</p>
 
 **EC2 Manager + State Manager — FR-3, FR-4, FR-5**
-![Node Provisioning](diagrams/screenshots/FR-3-Node-Provisioning.png)
-![Node Deprovisioning](diagrams/screenshots/FR-4-Node-Deprovisioning.png)
+<p align="center">
+  <img src="diagrams/screenshots/FR-3-Node-Provisioning.png" alt="Node Provisioning">
+</p>
+<p align="center">
+  <img src="diagrams/screenshots/FR-4-Node-Deprovisioning.png" alt="Node Deprovisioning">
+</p>
 
 **GitOps / FluxCD — BONUS-5**
-![GitOps FluxCD](diagrams/screenshots/BONUS-5-GitOps-FluxCD.png)
+<p align="center">
+  <img src="diagrams/screenshots/BONUS-5-GitOps-FluxCD.png" alt="GitOps FluxCD">
+</p>
 
 **Pulumi Infrastructure — NFR-4**
-![Security IAM](diagrams/screenshots/NFR-4-Security.png)
+<p align="center">
+  <img src="diagrams/screenshots/NFR-4-Security.png" alt="Security IAM">
+</p>
 
 ---
 

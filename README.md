@@ -2,7 +2,9 @@
 
 Intelligent autoscaling for K3s clusters on AWS EC2. Cuts idle cost 50%+ and responds to traffic spikes in under 3 minutes.
 
-![System Architecture](docs/diagrams/system-architecture.png)
+<p align="center">
+  <img src="docs/diagrams/system-architecture.png" alt="System Architecture">
+</p>
 
 ---
 
@@ -39,7 +41,9 @@ EventBridge triggers a Python Lambda every 2 minutes. Lambda queries Prometheus 
 
 ## 2. Architecture Explanation
 
-![System Architecture](docs/diagrams/system-architecture.png)
+<p align="center">
+  <img src="docs/diagrams/system-architecture.png" alt="System Architecture">
+</p>
 
 ### Component Summary
 
@@ -58,7 +62,9 @@ EventBridge triggers a Python Lambda every 2 minutes. Lambda queries Prometheus 
 
 ### How Components Interact
 
-![Data Flow](docs/diagrams/data-flow.png)
+<p align="center">
+  <img src="docs/diagrams/data-flow.png" alt="Data Flow">
+</p>
 
 ```
 EventBridge (2min) → Lambda
@@ -301,9 +307,29 @@ Access at `http://<master-ip>:30300` (credentials from Secrets Manager `node-fle
 | Application Metrics | `/d/app-metrics` | API request rate, p95/p99 latency, error rate %, queue depth |
 | Cost Tracking | `/d/cost-tracking` | Hourly cost, daily projection, savings vs. baseline, Spot/OD ratio |
 
-![Grafana Cluster Overview](docs/diagrams/grafana-cluster-overview.png)
+<p align="center">
+  <img src="docs/dashboards/dashboard-cluster-overview.png" alt="Grafana Cluster Overview">
+</p>
 
-> Cluster Overview dashboard captured during load test: node count=5, CPU spike visible, Scaling Events Timeline shows scale-up (green) and scale-down (yellow) events, Pod Distribution by Node heatmap confirms even spread.
+> Cluster Overview: node count, CPU%, memory%, pending pods, network I/O, disk I/O. Captured during load test — CPU spike visible, scale-up (green) and scale-down (yellow) events on timeline, even pod spread confirmed.
+
+<p align="center">
+  <img src="docs/dashboards/dashboard-autoscaler-performance.png" alt="Grafana Autoscaler Performance">
+</p>
+
+> Autoscaler Performance: Lambda duration, scale-up/down event counts, node join latency, decision reasons over time.
+
+<p align="center">
+  <img src="docs/dashboards/dashboard-application-metrics.png" alt="Grafana Application Metrics">
+</p>
+
+> Application Metrics: API request rate, p95/p99 latency, error rate %, queue depth — drives Layer 2 custom-metrics scaling decisions.
+
+<p align="center">
+  <img src="docs/dashboards/dashboard-cost-tracking.png" alt="Grafana Cost Tracking">
+</p>
+
+> Cost Tracking: hourly cost, daily projection, savings vs. static baseline, Spot/On-Demand ratio.
 
 **Storage**: `--storage.tsdb.retention.time=7d` — 7 days needed for predictive scaling history  
 **Access**: NodePort 30090, basic auth from Secrets Manager path `node-fleet/prometheus-auth`  
