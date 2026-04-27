@@ -8,6 +8,11 @@ Intelligent autoscaling for K3s clusters on AWS EC2. Cuts idle cost 50%+ and res
 
 ---
 
+> 📋 **Bird's-eye view** — See every requirement mapped to its solution in one page:  
+> [`docs/REQUIREMENT_WISE_SOLUTION.md`](docs/REQUIREMENT_WISE_SOLUTION.md)
+
+---
+
 ## 1. Project Overview
 
 ### Business Problem
@@ -540,6 +545,7 @@ Cost diagram: [diagrams/cost-comparison-chart.png](docs/diagrams/cost-comparison
 
 | Document | Purpose |
 |----------|---------|
+| 📋 [REQUIREMENT_WISE_SOLUTION.md](docs/REQUIREMENT_WISE_SOLUTION.md) | **Bird's-eye view** — every FR, NFR & bonus mapped to diagrams + solution |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system design, component interactions, network |
 | [SCALING_ALGORITHM.md](docs/SCALING_ALGORITHM.md) | Decision logic, thresholds, pseudocode |
 | [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | Step-by-step deployment runbook |

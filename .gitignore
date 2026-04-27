@@ -50,3 +50,9 @@ backups/*.tar.gz
 
 # Temp files
 tmp/
+
+# Lambda local dependencies and outputs
+lambda/*
+!lambda/*.py
+!lambda/*.txt
+!lambda/modules/
